@@ -2,6 +2,7 @@ package com.itv.servicebox
 
 import cats.data.NonEmptyList
 
+import scala.collection.Set
 import scala.concurrent.duration.Duration
 
 package object algebra {
@@ -14,8 +15,16 @@ package object algebra {
     case object Destroy extends CleanupStrategy
   }
 
+  sealed trait Status
+  object Status {
+    case object Running    extends Status
+    case object Paused     extends Status
+    case object NotRunning extends Status
+  }
+
   private[algebra] sealed trait Container {
     def imageName: String
+    def id[F[_]](service: Service[F, _]): Container.Id = Container.Id(s"${service.id.value}/${imageName}")
     def env: Map[String, String]
   }
 
@@ -28,8 +37,11 @@ package object algebra {
     case class Registered(id: Container.Id,
                           imageName: String,
                           env: Map[String, String],
-                          portMappings: List[Container.PortMapping])
-        extends Container
+                          portMappings: List[Container.PortMapping],
+                          status: Status)
+        extends Container {
+      val toSpec = Spec(imageName, env, portMappings.map(_._2))
+    }
   }
 
   private[algebra] sealed trait Service[F[_], C <: Container] {
@@ -41,12 +53,6 @@ package object algebra {
   }
 
   object Service {
-    sealed trait Status
-    object Status {
-      case object Running    extends Status
-      case object Paused     extends Status
-      case object NotRunning extends Status
-    }
 
     case class ReadyCheck[F[_]](isReady: Registry.Endpoints => F[Boolean], waitTimeout: Duration)
 
@@ -60,9 +66,15 @@ package object algebra {
                                 name: String,
                                 containers: NonEmptyList[Container.Registered],
                                 endpoints: Registry.Endpoints,
-                                status: Status,
                                 readyCheck: ReadyCheck[F])
-        extends Service[F, Container.Registered]
+        extends Service[F, Container.Registered] {
+
+      val status = containers.map(_.status).toList.toSet match {
+        case s if s == Set(Status.Running)                                           => Status.Running
+        case s if s == Set(Status.Running, Status.Paused) || s == Set(Status.Paused) => Status.Paused
+        case _                                                                       => Status.NotRunning
+      }
+    }
     case class Id(value: String)
   }
 }

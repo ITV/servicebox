@@ -17,8 +17,9 @@ class InMemoryRegistry(range: Range) extends Registry[IO] {
     for {
       range <- portRange.get
       mappings <- if (range.size > containerPorts.size)
-        IO.pure(containerPorts.zip(range.take(containerPorts.size)))
-      else IO.raiseError(new IllegalStateException(s"cannot allocate ${containerPorts.size} within range: $range"))
+        IO.pure(containerPorts.zip(range.take(containerPorts.size)).map(_.swap))
+      else
+        IO.raiseError(new IllegalStateException(s"cannot allocate ${containerPorts.size} port/s within range: $range"))
       _ <- portRange.modify(_.drop(containerPorts.size))
 
     } yield mappings
@@ -27,13 +28,13 @@ class InMemoryRegistry(range: Range) extends Registry[IO] {
     for {
       registeredContainers <- service.containers.toList.traverse[IO, Container.Registered](c =>
         allocatePorts(c.internalPorts).map { portMapping =>
-          val id = Container.Id(s"${service.id}/${c.imageName}")
-          Container.Registered(id, c.imageName, c.env, portMapping)
+          val id = Container.Id(s"${service.id.value}/${c.imageName}")
+          Container.Registered(id, c.imageName, c.env, portMapping, Status.NotRunning)
       })
 
       endpoints = NonEmptyList
         .fromListUnsafe {
-          registeredContainers.flatMap(_.portMappings.map(_._2))
+          registeredContainers.flatMap(_.portMappings.map(_._1))
         }
         .map(Location("127.0.0.1", _))
 
@@ -42,7 +43,6 @@ class InMemoryRegistry(range: Range) extends Registry[IO] {
         service.name,
         NonEmptyList.fromListUnsafe(registeredContainers),
         endpoints,
-        Service.Status.NotRunning,
         service.readyCheck
       )
 
@@ -56,9 +56,20 @@ class InMemoryRegistry(range: Range) extends Registry[IO] {
   override def lookup(id: Service.Id) =
     registry.get.map(_.get(id))
 
-  override def updateStatus(id: Service.Id, status: Service.Status): IO[Unit] =
-    registry.modify { r =>
-      val maybeService = r.get(id) //TODO: validate status here
-      maybeService.fold(r)(s => r.updated(id, s.copy(status = status)))
-    }.void
+  override def updateStatus(id: Service.Id, cId: Container.Id, status: Status) =
+    registry
+      .modify { r =>
+        val updatedR = for {
+          service          <- r.get(id)
+          (container, idx) <- service.containers.zipWithIndex.find(_._1.id == cId)
+          updatedContainers = NonEmptyList.fromListUnsafe(
+            service.containers.toList.updated(idx, container.copy(status = status)))
+
+        } yield r.updated(id, service.copy(containers = updatedContainers))
+
+        updatedR.getOrElse(r)
+      }
+      .map { change =>
+        change.now(id)
+      }
 }
