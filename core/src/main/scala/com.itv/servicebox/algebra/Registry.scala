@@ -5,8 +5,11 @@ import cats.data.NonEmptyList
 
 abstract class Registry[F[_]](implicit M: MonadError[F, Throwable]) {
   def register(service: Service.Spec[F]): F[Service.Registered[F]]
+
   def updateStatus(id: Service.Ref, cId: Container.Ref, status: Status): F[Service.Registered[F]]
+
   def lookup(id: Service.Ref): F[Option[Service.Registered[F]]]
+
   def unsafeLookup(id: Service.Ref): F[Service.Registered[F]] =
     M.flatMap(lookup(id))(
       _.fold(M.raiseError[Service.Registered[F]](

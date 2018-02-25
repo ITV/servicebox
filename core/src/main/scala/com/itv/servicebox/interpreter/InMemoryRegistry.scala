@@ -67,7 +67,6 @@ class InMemoryRegistry(range: Range) extends Registry[IO] {
       } yield r.updated(id, service.copy(containers = updatedContainers))
 
     for {
-
       registered <- registry
         .modify { r =>
           update(r).getOrElse(r)

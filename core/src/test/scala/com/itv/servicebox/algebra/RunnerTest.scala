@@ -1,7 +1,7 @@
 package com.itv.servicebox.algebra
 
 import cats.effect.IO
-import com.itv.servicebox.interpreter.{IORunner, InMemoryRegistry}
+import com.itv.servicebox.interpreter.{IORunner, InMemoryRegistry, IOServiceController}
 import com.itv.servicebox.fake
 import org.scalatest.{Assertion, FreeSpec, Matchers}
 
@@ -29,9 +29,10 @@ class RunnerTest extends FreeSpec with Matchers with TypeCheckedTripleEquals {
   )
 
   def withRunner(portRange: Range = portRange)(f: (Runner[IO], Registry[IO]) => IO[Assertion]): IO[Assertion] = {
-    val registry   = new InMemoryRegistry(portRange)
-    val controller = new fake.Controller(CleanupStrategy.Pause, registry)
-    val runner     = new IORunner(controller)
+    val registry            = new InMemoryRegistry(portRange)
+    val containerController = new fake.ContainerController(CleanupStrategy.Pause, Map.empty, registry)
+    val controller          = new IOServiceController(registry, containerController)
+    val runner              = new IORunner(controller)
     f(runner, registry)
   }
 
@@ -81,7 +82,6 @@ class RunnerTest extends FreeSpec with Matchers with TypeCheckedTripleEquals {
           maybeSrv <- registry.lookup(service.ref)
         } yield maybeSrv.forall(_.status != Running) should ===(true)
       }.unsafeRunSync()
-
     }
   }
 }
