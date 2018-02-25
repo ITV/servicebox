@@ -10,7 +10,7 @@ import fs2.async.Ref
 import cats.syntax.functor._
 
 class InMemoryRegistry(range: Range) extends Registry[IO] {
-  private val registry  = Ref[IO, Map[Service.Id, Service.Registered[IO]]](Map.empty).unsafeRunSync()
+  private val registry  = Ref[IO, Map[Service.Ref, Service.Registered[IO]]](Map.empty).unsafeRunSync()
   private val portRange = Ref[IO, Range](range).unsafeRunSync()
 
   private def allocatePorts(containerPorts: List[Int]): IO[List[Container.PortMapping]] =
@@ -28,7 +28,7 @@ class InMemoryRegistry(range: Range) extends Registry[IO] {
     for {
       registeredContainers <- service.containers.toList.traverse[IO, Container.Registered](c =>
         allocatePorts(c.internalPorts).map { portMapping =>
-          val id = Container.Id(s"${service.id.value}/${c.imageName}")
+          val id = Container.Ref(s"${service.ref.value}/${c.imageName}")
           Container.Registered(id, c.imageName, c.env, portMapping, Status.NotRunning)
       })
 
@@ -46,30 +46,34 @@ class InMemoryRegistry(range: Range) extends Registry[IO] {
         service.readyCheck
       )
 
-      _ <- registry.modify(_.updated(rs.id, rs))
+      _ <- registry.modify(_.updated(rs.ref, rs))
 
     } yield rs
 
-  override def deregister(id: Service.Id) =
+  override def deregister(id: Service.Ref) =
     registry.modify(_ - id).void
 
-  override def lookup(id: Service.Id) =
+  override def lookup(id: Service.Ref) =
     registry.get.map(_.get(id))
 
-  override def updateStatus(id: Service.Id, cId: Container.Id, status: Status) =
-    registry
-      .modify { r =>
-        val updatedR = for {
-          service          <- r.get(id)
-          (container, idx) <- service.containers.zipWithIndex.find(_._1.id == cId)
-          updatedContainers = NonEmptyList.fromListUnsafe(
-            service.containers.toList.updated(idx, container.copy(status = status)))
+  override def updateStatus(id: Service.Ref, cId: Container.Ref, status: Status) = {
+    def update(r: Map[Service.Ref, Service.Registered[IO]]) =
+      for {
+        service          <- r.get(id)
+        (container, idx) <- service.containers.zipWithIndex.find(_._1.ref == cId)
+        updatedContainers = NonEmptyList.fromListUnsafe(
+          service.containers.toList.updated(idx, container.copy(status = status)))
 
-        } yield r.updated(id, service.copy(containers = updatedContainers))
+      } yield r.updated(id, service.copy(containers = updatedContainers))
 
-        updatedR.getOrElse(r)
-      }
-      .map { change =>
-        change.now(id)
-      }
+    for {
+
+      registered <- registry
+        .modify { r =>
+          update(r).getOrElse(r)
+        }
+        .map(_.now(id))
+
+    } yield registered
+  }
 }

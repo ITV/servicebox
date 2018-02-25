@@ -5,17 +5,17 @@ import cats.data.NonEmptyList
 
 abstract class Registry[F[_]](implicit M: MonadError[F, Throwable]) {
   def register(service: Service.Spec[F]): F[Service.Registered[F]]
-  def updateStatus(id: Service.Id, cId: Container.Id, status: Status): F[Service.Registered[F]]
-  def lookup(id: Service.Id): F[Option[Service.Registered[F]]]
-  def unsafeLookup(id: Service.Id): F[Service.Registered[F]] =
+  def updateStatus(id: Service.Ref, cId: Container.Ref, status: Status): F[Service.Registered[F]]
+  def lookup(id: Service.Ref): F[Option[Service.Registered[F]]]
+  def unsafeLookup(id: Service.Ref): F[Service.Registered[F]] =
     M.flatMap(lookup(id))(
       _.fold(M.raiseError[Service.Registered[F]](
         new IllegalArgumentException(s"Cannot lookup a service with id: ${id.value} in registry")))(M.pure))
 
   def lookupOrRegister(spec: Service.Spec[F]): F[Service.Registered[F]] =
-    M.flatMap(lookup(spec.id))(_.fold(register(spec))(M.pure))
+    M.flatMap(lookup(spec.ref))(_.fold(register(spec))(M.pure))
 
-  def deregister(id: Service.Id): F[Unit]
+  def deregister(id: Service.Ref): F[Unit]
 }
 
 object Registry {

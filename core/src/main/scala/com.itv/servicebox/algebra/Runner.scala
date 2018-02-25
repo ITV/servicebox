@@ -11,7 +11,7 @@ abstract class Runner[F[_]](ctrl: Controller[F])(implicit M: MonadError[F, Throw
       _          <- ctrl.waitUntilReady(registered)
     } yield registered
 
-  def tearDown(id: Service.Id): F[Unit] =
+  def tearDown(id: Service.Registered[F]): F[Unit] =
     for {
       _ <- ctrl.stop(id)
     } yield ()

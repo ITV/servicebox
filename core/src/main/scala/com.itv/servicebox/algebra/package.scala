@@ -24,17 +24,17 @@ package object algebra {
 
   private[algebra] sealed trait Container {
     def imageName: String
-    def id[F[_]](service: Service[F, _]): Container.Id = Container.Id(s"${service.id.value}/${imageName}")
+    def ref(ref: Service.Ref): Container.Ref = Container.Ref(s"${ref.value}/$imageName")
     def env: Map[String, String]
   }
 
   object Container {
-    case class Id(value: String)
+    case class Ref(value: String)
     type PortMapping = (Int, Int)
 
     case class Spec(imageName: String, env: Map[String, String], internalPorts: List[Int]) extends Container
 
-    case class Registered(id: Container.Id,
+    case class Registered(ref: Container.Ref,
                           imageName: String,
                           env: Map[String, String],
                           portMappings: List[Container.PortMapping],
@@ -47,7 +47,7 @@ package object algebra {
   private[algebra] sealed trait Service[F[_], C <: Container] {
     def tag: AppTag
     def name: String
-    def id: Service.Id = Service.Id(s"${tag.value}/$name")
+    def ref: Service.Ref = Service.Ref(s"${tag.value}/$name")
     def containers: NonEmptyList[C]
     def readyCheck: Service.ReadyCheck[F]
   }
@@ -74,7 +74,9 @@ package object algebra {
         case s if s == Set(Status.Running, Status.Paused) || s == Set(Status.Paused) => Status.Paused
         case _                                                                       => Status.NotRunning
       }
+
+      def toSpec = Spec(tag, name, containers.map(_.toSpec), readyCheck)
     }
-    case class Id(value: String)
+    case class Ref(value: String)
   }
 }
