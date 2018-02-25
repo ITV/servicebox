@@ -1,0 +1,9 @@
+.idea
+project/target
+target
+.ensime
+.ensime_cache/
+project/ensime.sbt
+*.bk
+
+.DS_Store
