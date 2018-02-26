@@ -23,5 +23,10 @@ abstract class Registry[F[_]](implicit M: MonadError[F, Throwable]) {
 
 object Registry {
   case class Location(host: String, port: Int)
+  object Location {
+    def localhost(port: Int): Location = Location("127.0.0.1", port)
+  }
   type Endpoints = NonEmptyList[Location]
+
+  case class EmptyPortList(containerRefs: List[Container.Ref]) extends Throwable
 }

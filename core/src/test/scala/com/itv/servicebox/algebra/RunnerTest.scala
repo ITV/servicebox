@@ -72,6 +72,15 @@ class RunnerTest extends FreeSpec with Matchers with TypeCheckedTripleEquals {
         } yield result.isLeft should ===(true)
       }.unsafeRunSync()
     }
+    "raises an error if a service containers definition result in an empty port list" in {
+      withRunner() { (runner, _) =>
+        val containers = rabbitSpec.containers.map(c => c.copy(internalPorts = Nil))
+        for {
+          result <- runner.setUp(rabbitSpec.copy(containers = containers)).attempt
+          expected = Registry.EmptyPortList(containers.toList.map(_.ref(rabbitSpec.ref)))
+        } yield result.left.get should ===(expected)
+      }
+    }
   }
   "tearDown" - {
     "shuts down the services and updates the registry" in {

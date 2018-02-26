@@ -32,11 +32,15 @@ class InMemoryRegistry(range: Range) extends Registry[IO] {
           Container.Registered(id, c.imageName, c.env, portMapping, Status.NotRunning)
       })
 
-      endpoints = NonEmptyList
-        .fromListUnsafe {
+      err = Registry.EmptyPortList(registeredContainers.map(_.ref))
+
+      endpoints <- NonEmptyList
+        .fromList(
           registeredContainers.flatMap(_.portMappings.map(_._1))
+        )
+        .fold(IO.raiseError[NonEmptyList[Location]](err)) { ports =>
+          IO.pure(ports.map(Location.localhost))
         }
-        .map(Location("127.0.0.1", _))
 
       rs = Service.Registered(
         service.tag,
