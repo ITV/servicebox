@@ -1,11 +1,11 @@
 package com.itv.servicebox.algebra
 
-import cats.{Applicative, MonadError}
-import Status.Running
-import cats.syntax.functor._
+import cats.MonadError
 import cats.instances.list._
-import cats.syntax.traverse._
 import cats.syntax.flatMap._
+import cats.syntax.functor._
+import cats.syntax.traverse._
+import com.itv.servicebox.algebra.Status.Running
 
 abstract class ServiceController[F[_]](registry: Registry[F], ctrl: ContainerController[F])(
     implicit M: MonadError[F, Throwable]) {

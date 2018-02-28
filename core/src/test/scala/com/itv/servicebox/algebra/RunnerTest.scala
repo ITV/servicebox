@@ -11,13 +11,13 @@ import com.itv.servicebox.algebra.Status.Running
 import org.scalactic.TypeCheckedTripleEquals
 
 class RunnerTest extends FreeSpec with Matchers with TypeCheckedTripleEquals {
-  val appTag    = AppTag("test")
+  val appTag    = AppTag("org", "test")
   val portRange = 49152 to 49162
 
   val postgresSpec = Service.Spec[IO](
     appTag,
     "db",
-    NonEmptyList.of(Container.Spec("postgres:9.5.4", Map("POSTGRES_DB" -> appTag.value), List(5432))),
+    NonEmptyList.of(Container.Spec("postgres:9.5.4", Map("POSTGRES_DB" -> appTag.appName), List(5432))),
     Service.ReadyCheck[IO](_ => IO.pure(true), 3.millis)
   )
 

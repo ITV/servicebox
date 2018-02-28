@@ -24,7 +24,15 @@ lazy val commonSettings = Seq(
 lazy val core = (project in file("core"))
   .settings(
     commonSettings,
-  )
+  ).settings(moduleName := "core")
+
+lazy val docker = (project in file("docker"))
+  .settings(commonSettings ++ Seq(
+    moduleName := "docker",
+    libraryDependencies ++= Seq(
+      "com.spotify"  % "docker-client" % "8.10.0"
+    )
+  )).dependsOn(core)
 
 lazy val root = (project in file("."))
-  .aggregate(core)
+  .aggregate(core, docker)

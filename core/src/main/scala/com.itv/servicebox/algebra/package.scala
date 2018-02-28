@@ -1,13 +1,18 @@
 package com.itv.servicebox
 
+import cats.Show
 import cats.data.NonEmptyList
+import cats.syntax.show._
 
 import scala.collection.Set
 import scala.concurrent.duration.Duration
 
 package object algebra {
-
-  case class AppTag(value: String) extends AnyVal
+  //TODO: consider adding an organisation/team name
+  case class AppTag(org: String, appName: String)
+  object AppTag {
+    implicit val appTagShow: Show[AppTag] = Show.show(tag => s"${tag.org}/${tag.appName}")
+  }
 
   sealed trait CleanupStrategy
   object CleanupStrategy {
@@ -24,12 +29,15 @@ package object algebra {
 
   private[algebra] sealed trait Container {
     def imageName: String
-    def ref(ref: Service.Ref): Container.Ref = Container.Ref(s"${ref.value}/$imageName")
+    def ref(ref: Service.Ref): Container.Ref = Container.Ref(s"${ref.show}/$imageName")
     def env: Map[String, String]
   }
 
   object Container {
     case class Ref(value: String)
+    object Ref {
+      implicit val refShow: Show[Ref] = Show.show(_.value)
+    }
     type PortMapping = (Int, Int)
 
     case class Spec(imageName: String, env: Map[String, String], internalPorts: List[Int]) extends Container
@@ -42,12 +50,31 @@ package object algebra {
         extends Container {
       val toSpec = Spec(imageName, env, portMappings.map(_._2))
     }
+
+    trait Matcher[Repr] {
+      def apply(matched: Repr, expected: Container.Registered): Matcher.Result[Repr]
+    }
+    object Matcher {
+      sealed trait Result[Repr] {
+        def matched: Repr
+        def expected: Container.Registered
+        def isSuccess: Boolean
+      }
+      sealed trait Error
+
+      case class Success[Repr](matched: Repr, expected: Container.Registered) extends Result[Repr] {
+        override val isSuccess = true
+      }
+      case class Failure[Repr](matched: Repr, expected: Container.Registered, msg: String) extends Result[Repr] {
+        override val isSuccess = false
+      }
+    }
   }
 
   private[algebra] sealed trait Service[F[_], C <: Container] {
     def tag: AppTag
     def name: String
-    def ref: Service.Ref = Service.Ref(s"${tag.value}/$name")
+    def ref: Service.Ref = Service.Ref(s"${tag.show}/$name")
     def containers: NonEmptyList[C]
     def readyCheck: Service.ReadyCheck[F]
   }
@@ -78,5 +105,8 @@ package object algebra {
       def toSpec = Spec(tag, name, containers.map(_.toSpec), readyCheck)
     }
     case class Ref(value: String)
+    object Ref {
+      implicit val serviceRefShow: Show[Ref] = Show.show[Ref](_.value)
+    }
   }
 }
