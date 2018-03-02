@@ -5,71 +5,51 @@ import cats.effect.IO
 import com.itv.servicebox.algebra
 import com.itv.servicebox.algebra._
 import cats.syntax.traverse._
+import cats.syntax.show._
 import cats.instances.list._
-import ContainerController.InvalidStateTransit
-import com.itv.servicebox.algebra.Status._
+import ContainerController.{ContainerGroups, InvalidStateTransit}
+import com.itv.servicebox.algebra.State._
 import org.scalatest.Matchers._
 import fs2.async.Ref
 
-class ContainerController(strategy: CleanupStrategy,
+class ContainerController(imageRegistry: ImageRegistry[IO],
                           initialState: Map[Container.Ref, Container.Registered],
-                          registry: Registry[IO])
-    extends algebra.ContainerController[IO] {
+                          logger: Logger[IO])
+    extends algebra.ContainerController[IO](imageRegistry, logger) {
 
   private val containersByRef = Ref[IO, Map[Container.Ref, Container.Registered]](initialState).unsafeRunSync()
 
-  override def containersFor(spec: Service.Spec[IO]): IO[List[Container.Registered]] =
+  def containerGroups(spec: Service.Registered[IO]) =
     for {
-      containers <- spec.containers.toList.traverse[IO, Option[Container.Registered]] { c =>
-        containersByRef.get.map(_.get(c.ref(spec.ref)))
-      }
-    } yield containers.flatten
+      containers <- spec.containers.toList
+        .traverse[IO, Option[Container.Registered]] { c =>
+          containersByRef.get.map(_.get(c.ref(spec.ref)))
+        }
+        .map(_.flatten)
+    } yield (ContainerGroups.apply _).tupled(containers.partition(_.state == State.Running))
 
-  override def startContainer(serviceSpec: Service.Spec[IO], ref: Container.Ref): IO[Unit] =
+  override protected def startContainer(tag: AppTag, container: Container.Registered): IO[Unit] =
     for {
-      service <- registry.lookupOrRegister(serviceSpec)
-      container <- service.containers
-        .find(_.ref == ref)
-        .fold(IO.raiseError[Container.Registered](
-          new IllegalArgumentException(s"Cannot find container with id ${ref.value} in service: $service")))(IO.pure)
-
-      _ <- containersByRef.modify(_.updated(ref, container))
-      _ <- strategy match {
-        case CleanupStrategy.Pause =>
-          changeContainerState(container.ref, NonEmptyList.of(Status.Paused, Status.NotRunning), Status.Running)
-        case CleanupStrategy.Destroy =>
-          changeContainerState(container.ref, NonEmptyList.of(Status.NotRunning, Status.Paused), Status.Running)
-      }
-      _ <- registry.updateStatus(serviceSpec.ref, ref, Status.Running)
-
+      _ <- logger.info(s"starting container ${container.ref.show} with app tag: ${tag.show}")
+      _ <- containersByRef.modify(_.updated(container.ref, container))
+      _ <- changeContainerState(container.ref, Running)
     } yield ()
 
-  override def stopContainer(sRef: Service.Ref, spec: Container.Registered) = {
-    import cats.syntax.functor._
-    val changeState: IO[Status] = strategy match {
-      case CleanupStrategy.Pause => changeContainerState(spec.ref, NonEmptyList.of(Running), Paused).as(Paused)
-      case CleanupStrategy.Destroy =>
-        changeContainerState(spec.ref, NonEmptyList.of(Running), NotRunning).as(NotRunning)
-    }
-    changeState.flatMap(newState => registry.updateStatus(sRef, spec.ref, newState).void)
-  }
-
-  private def changeContainerState(ref: Container.Ref, from: NonEmptyList[Status], to: Status): IO[Unit] = {
-    import cats.syntax.monadError._
-    val err = InvalidStateTransit(_: NonEmptyList[Status], to)
-
+  override def stopContainer(tag: AppTag, container: Container.Registered) =
     for {
-      currentState <- containersByRef.get.map(_.get(ref).map(_.status))
-      _ <- currentState.fold(IO.pure(from))(s =>
-        IO.pure(NonEmptyList.of(s)).ensureOr(err)(s => from.toList.contains(s.head)))
+      _ <- logger.info(s"stopping container ${container.ref.show} with app tag: ${tag.show}")
+      _ <- changeContainerState(container.ref, NotRunning)
+    } yield ()
+
+  private def changeContainerState(ref: Container.Ref, state: State): IO[Unit] =
+    for {
       _ <- containersByRef.modify { containers =>
         containers
           .get(ref)
           .map { c =>
-            containers.updated(ref, c.copy(status = to))
+            containers.updated(ref, c.copy(state = state))
           }
           .getOrElse(fail(s"Failed to resolve container ${ref.value}. This shouldn't happen"))
       }
     } yield ()
-  }
 }

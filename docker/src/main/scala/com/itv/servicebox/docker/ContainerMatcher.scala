@@ -3,18 +3,20 @@ package com.itv.servicebox.docker
 import com.itv.servicebox.algebra
 import com.itv.servicebox.algebra.Container
 import Container.Matcher
-import com.spotify.docker.client.messages.{Container => JavaContainer, _}
+import com.spotify.docker.client.messages.ContainerInfo
 import scala.collection.JavaConverters._
 import scala.util.Try
 
-object ContainerMapper extends Matcher[ContainerAndInfo] {
+object ContainerMatcher extends Matcher[ContainerAndInfo] {
 
   override def apply(matched: ContainerAndInfo, expected: Container.Registered) = {
-    val failure = Matcher.Failure(matched, expected, _: String)
+    val failure       = Matcher.Failure(matched, expected, _: String)
+    val matcherResult = Matcher.Result(matched, expected)(_: Container.Registered)
 
-    val status: Option[algebra.Status] = matched.container.status() match {
-      case "paused"  => Some(algebra.Status.Paused)
-      case "running" => Some(algebra.Status.Running)
+    val status: Option[algebra.State] = matched.container.status() match {
+      case "paused"  => Some(algebra.State.NotRunning)
+      case "exited"  => Some(algebra.State.NotRunning)
+      case "running" => Some(algebra.State.Running)
       case _         => None
 
     }
@@ -23,12 +25,9 @@ object ContainerMapper extends Matcher[ContainerAndInfo] {
       .fold[Matcher.Result[ContainerAndInfo]](failure(s"Unexpected container status: ${matched.container.status()}")) {
         status =>
           val env = containerEnvVars(matched.info, expected.env.keySet)
-          Matcher.Success(matched,
-                          Container.Registered(expected.ref,
-                                               matched.container.image(),
-                                               env,
-                                               containerPortMappings(matched.info),
-                                               status))
+          val parsed = Container
+            .Registered(expected.ref, matched.container.image(), env, containerPortMappings(matched.info), status)
+          matcherResult(parsed)
       }
   }
 

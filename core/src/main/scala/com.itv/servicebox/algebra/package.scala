@@ -20,11 +20,10 @@ package object algebra {
     case object Destroy extends CleanupStrategy
   }
 
-  sealed trait Status
-  object Status {
-    case object Running    extends Status
-    case object Paused     extends Status
-    case object NotRunning extends Status
+  sealed trait State
+  object State {
+    case object Running    extends State
+    case object NotRunning extends State
   }
 
   private[algebra] sealed trait Container {
@@ -46,7 +45,7 @@ package object algebra {
                           imageName: String,
                           env: Map[String, String],
                           portMappings: List[Container.PortMapping],
-                          status: Status)
+                          state: State) //TODO: consider replacing this with a boolean or adding more granular states
         extends Container {
       val toSpec = Spec(imageName, env, portMappings.map(_._2))
     }
@@ -60,10 +59,21 @@ package object algebra {
         def expected: Container.Registered
         def isSuccess: Boolean
       }
-      sealed trait Error
+      object Result {
+        def apply[Repr](matched: Repr, expected: Container.Registered)(actual: Container.Registered): Result[Repr] =
+          if (expected == actual)
+            Success(matched, expected)
+          else Mismatch(matched, expected, actual)
+      }
 
       case class Success[Repr](matched: Repr, expected: Container.Registered) extends Result[Repr] {
         override val isSuccess = true
+      }
+
+      //TODO: add some diffing here
+      case class Mismatch[Repr](matched: Repr, expected: Container.Registered, actual: Container.Registered)
+          extends Result[Repr] {
+        override val isSuccess = false
       }
       case class Failure[Repr](matched: Repr, expected: Container.Registered, msg: String) extends Result[Repr] {
         override val isSuccess = false
@@ -81,7 +91,7 @@ package object algebra {
 
   object Service {
 
-    case class ReadyCheck[F[_]](isReady: Registry.Endpoints => F[Boolean], waitTimeout: Duration)
+    case class ReadyCheck[F[_]](isReady: ServiceRegistry.Endpoints => F[Boolean], waitTimeout: Duration)
 
     case class Spec[F[_]](tag: AppTag,
                           name: String,
@@ -92,14 +102,13 @@ package object algebra {
     case class Registered[F[_]](tag: AppTag,
                                 name: String,
                                 containers: NonEmptyList[Container.Registered],
-                                endpoints: Registry.Endpoints,
+                                endpoints: ServiceRegistry.Endpoints,
                                 readyCheck: ReadyCheck[F])
         extends Service[F, Container.Registered] {
 
-      val status = containers.map(_.status).toList.toSet match {
-        case s if s == Set(Status.Running)                                           => Status.Running
-        case s if s == Set(Status.Running, Status.Paused) || s == Set(Status.Paused) => Status.Paused
-        case _                                                                       => Status.NotRunning
+      val state = containers.map(_.state).toList.toSet match {
+        case s if s == Set(State.Running) => State.Running
+        case _                            => State.NotRunning
       }
 
       def toSpec = Spec(tag, name, containers.map(_.toSpec), readyCheck)

@@ -3,10 +3,10 @@ package com.itv.servicebox.algebra
 import cats.MonadError
 import cats.data.NonEmptyList
 
-abstract class Registry[F[_]](implicit M: MonadError[F, Throwable]) {
+abstract class ServiceRegistry[F[_]](logger: Logger[F])(implicit M: MonadError[F, Throwable]) {
   def register(service: Service.Spec[F]): F[Service.Registered[F]]
 
-  def updateStatus(id: Service.Ref, cId: Container.Ref, status: Status): F[Service.Registered[F]]
+  def updateStatus(id: Service.Ref, cId: Container.Ref, status: State): F[Service.Registered[F]]
 
   def lookup(id: Service.Ref): F[Option[Service.Registered[F]]]
 
@@ -21,7 +21,7 @@ abstract class Registry[F[_]](implicit M: MonadError[F, Throwable]) {
   def deregister(id: Service.Ref): F[Unit]
 }
 
-object Registry {
+object ServiceRegistry {
   case class Location(host: String, port: Int)
   object Location {
     def localhost(port: Int): Location = Location("127.0.0.1", port)

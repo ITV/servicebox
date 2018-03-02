@@ -4,12 +4,13 @@ import cats.data.NonEmptyList
 import cats.effect.IO
 import cats.instances.list._
 import cats.syntax.traverse._
-import com.itv.servicebox.algebra.Registry.Location
-import com.itv.servicebox.algebra.{Registry, Service, _}
+import cats.syntax.show._
+import com.itv.servicebox.algebra.ServiceRegistry.Location
+import com.itv.servicebox.algebra.{ServiceRegistry, Service, _}
 import fs2.async.Ref
 import cats.syntax.functor._
 
-class InMemoryRegistry(range: Range) extends Registry[IO] {
+class InMemoryServiceRegistry(range: Range, logger: Logger[IO]) extends ServiceRegistry[IO](logger) {
   private val registry  = Ref[IO, Map[Service.Ref, Service.Registered[IO]]](Map.empty).unsafeRunSync()
   private val portRange = Ref[IO, Range](range).unsafeRunSync()
 
@@ -29,10 +30,10 @@ class InMemoryRegistry(range: Range) extends Registry[IO] {
       registeredContainers <- service.containers.toList.traverse[IO, Container.Registered](c =>
         allocatePorts(c.internalPorts).map { portMapping =>
           val id = Container.Ref(s"${service.ref.value}/${c.imageName}")
-          Container.Registered(id, c.imageName, c.env, portMapping, Status.NotRunning)
+          Container.Registered(id, c.imageName, c.env, portMapping, State.NotRunning)
       })
 
-      err = Registry.EmptyPortList(registeredContainers.map(_.ref))
+      err = ServiceRegistry.EmptyPortList(registeredContainers.map(_.ref))
 
       endpoints <- NonEmptyList
         .fromList(
@@ -49,7 +50,11 @@ class InMemoryRegistry(range: Range) extends Registry[IO] {
         endpoints,
         service.readyCheck
       )
+      summary = registeredContainers
+        .map(c => s"[${c.ref.show}] ${c.portMappings.map { case (host, guest) => s"$host -> $guest" }.mkString(", ")}")
+        .mkString("\n")
 
+      _ <- logger.debug(s"registering containers with port ranges:\n\t$summary")
       _ <- registry.modify(_.updated(rs.ref, rs))
 
     } yield rs
@@ -60,13 +65,13 @@ class InMemoryRegistry(range: Range) extends Registry[IO] {
   override def lookup(id: Service.Ref) =
     registry.get.map(_.get(id))
 
-  override def updateStatus(id: Service.Ref, cId: Container.Ref, status: Status) = {
+  override def updateStatus(id: Service.Ref, cId: Container.Ref, status: State) = {
     def update(r: Map[Service.Ref, Service.Registered[IO]]) =
       for {
         service          <- r.get(id)
         (container, idx) <- service.containers.zipWithIndex.find(_._1.ref == cId)
         updatedContainers = NonEmptyList.fromListUnsafe(
-          service.containers.toList.updated(idx, container.copy(status = status)))
+          service.containers.toList.updated(idx, container.copy(state = status)))
 
       } yield r.updated(id, service.copy(containers = updatedContainers))
 
