@@ -1,21 +1,20 @@
 package com.itv.servicebox.fake
 
-import cats.data.NonEmptyList
 import cats.effect.IO
-import com.itv.servicebox.algebra
-import com.itv.servicebox.algebra._
-import cats.syntax.traverse._
-import cats.syntax.show._
 import cats.instances.list._
-import ContainerController.{ContainerGroups, InvalidStateTransit}
+import cats.syntax.show._
+import cats.syntax.traverse._
+import com.itv.servicebox.algebra
+import com.itv.servicebox.algebra.ContainerController.ContainerGroups
 import com.itv.servicebox.algebra.State._
-import org.scalatest.Matchers._
+import com.itv.servicebox.algebra._
 import fs2.async.Ref
+import org.scalatest.Matchers._
 
 class ContainerController(imageRegistry: ImageRegistry[IO],
-                          initialState: Map[Container.Ref, Container.Registered],
-                          logger: Logger[IO])
-    extends algebra.ContainerController[IO](imageRegistry, logger) {
+                          logger: Logger[IO],
+                          initialState: Map[Container.Ref, Container.Registered] = Map.empty,
+) extends algebra.ContainerController[IO](imageRegistry, logger) {
 
   private val containersByRef = Ref[IO, Map[Container.Ref, Container.Registered]](initialState).unsafeRunSync()
 

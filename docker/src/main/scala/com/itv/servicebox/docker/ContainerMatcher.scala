@@ -10,25 +10,17 @@ import scala.util.Try
 object ContainerMatcher extends Matcher[ContainerAndInfo] {
 
   override def apply(matched: ContainerAndInfo, expected: Container.Registered) = {
-    val failure       = Matcher.Failure(matched, expected, _: String)
     val matcherResult = Matcher.Result(matched, expected)(_: Container.Registered)
 
-    val status: Option[algebra.State] = matched.container.status() match {
-      case "paused"  => Some(algebra.State.NotRunning)
-      case "exited"  => Some(algebra.State.NotRunning)
-      case "running" => Some(algebra.State.Running)
-      case _         => None
+    val status =
+      if (matched.info.state.running())
+        algebra.State.Running
+      else algebra.State.Running
 
-    }
-
-    status
-      .fold[Matcher.Result[ContainerAndInfo]](failure(s"Unexpected container status: ${matched.container.status()}")) {
-        status =>
-          val env = containerEnvVars(matched.info, expected.env.keySet)
-          val parsed = Container
-            .Registered(expected.ref, matched.container.image(), env, containerPortMappings(matched.info), status)
-          matcherResult(parsed)
-      }
+    val env = containerEnvVars(matched.info, expected.env.keySet)
+    val parsed = Container
+      .Registered(expected.ref, matched.container.image(), env, containerPortMappings(matched.info), status)
+    matcherResult(parsed)
   }
 
   private def containerEnvVars(info: ContainerInfo, envVarsWhitelist: Set[String]): Map[String, String] =
@@ -62,7 +54,7 @@ object ContainerMatcher extends Matcher[ContainerAndInfo] {
             port.takeWhile(_.isDigit).toInt
           }.toOption
           val hostPort = binding.asScala.headOption.map(_.hostPort().toInt)
-          (containerPort, hostPort).tupled
+          (hostPort, containerPort).tupled
       }
       .toList
   }

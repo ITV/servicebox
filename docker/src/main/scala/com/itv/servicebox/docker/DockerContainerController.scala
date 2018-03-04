@@ -1,27 +1,29 @@
-package com.itv.servicebox.interpreter
+package com.itv.servicebox.docker
 
+import cats.MonadError
+import cats.syntax.flatMap._
+import cats.syntax.functor._
 import com.itv.servicebox.algebra
-import algebra._
-import cats.effect.IO
 import com.itv.servicebox.algebra.ContainerController.ContainerGroups
+import com.itv.servicebox.algebra._
 import com.spotify.docker.client.DefaultDockerClient
-import com.spotify.docker.client.messages.{Container => JavaContainer, _}
 import com.spotify.docker.client.DockerClient.ListContainersParam
-import com.itv.servicebox.docker.{ContainerAndInfo, ContainerMatcher}
+import com.spotify.docker.client.messages.{Container => JavaContainer, _}
 
-import scala.collection.mutable
 import scala.collection.JavaConverters._
+import scala.collection.mutable
 
-class IODockerContainerController(imageRegistry: ImageRegistry[IO], logger: Logger[IO])
-    extends algebra.ContainerController[IO](imageRegistry, logger) {
+class DockerContainerController[F[_]](dockerClient: DefaultDockerClient,
+                                      imageRegistry: ImageRegistry[F],
+                                      logger: Logger[F])(implicit I: ImpureEffect[F], M: MonadError[F, Throwable])
+    extends algebra.ContainerController[F](imageRegistry, logger) {
 
   import cats.syntax.show._
 
   private val AppNameLabel      = "com.itv.servicebox.app"
   private val ContainerRefLabel = "com.itv.servicebox.container-ref"
-  private val dockerClient      = DefaultDockerClient.fromEnv.build
 
-  override def containerGroups(service: Service.Registered[IO]) =
+  override def containerGroups(service: Service.Registered[F]) =
     for {
       runningContainersByImageName <- allRunningContainers(service)
     } yield {
@@ -30,7 +32,7 @@ class IODockerContainerController(imageRegistry: ImageRegistry[IO], logger: Logg
           .getOrElse(container.imageName, Nil)
           .map { javaContainer =>
             val info = dockerClient.inspectContainer(javaContainer.id())
-            ContainerMatcher(ContainerAndInfo(javaContainer, info), container)
+            ContainerMatcher(ContainerAndInfo(javaContainer, info), container.running)
           }
           .partition(_.isSuccess)
 
@@ -38,28 +40,30 @@ class IODockerContainerController(imageRegistry: ImageRegistry[IO], logger: Logg
       }
     }
 
-  private def allRunningContainers(spec: Service.Registered[IO]): IO[Map[String, List[JavaContainer]]] =
-    IO.apply(
+  private def allRunningContainers(spec: Service.Registered[F]): F[Map[String, List[JavaContainer]]] =
+    I.lift(
         dockerClient.listContainers(ListContainersParam.withStatusRunning(),
                                     ListContainersParam.withLabel(AppNameLabel, spec.tag.show)))
-      .map(_.asScala.toList.groupBy(_.imageId()))
+      .map(_.asScala.toList.groupBy(_.image()))
 
-  override protected def startContainer(tag: AppTag, container: Container.Registered): IO[Unit] =
+  override protected def startContainer(tag: AppTag, container: Container.Registered): F[Unit] =
     for {
-      res <- IO(dockerClient.createContainer(containerConfig(container, tag)))
-      _   <- IO(dockerClient.startContainer(res.id()))
+      res <- I.lift(dockerClient.createContainer(containerConfig(container, tag)))
+      _   <- I.lift(dockerClient.startContainer(res.id()))
 
     } yield ()
 
   //TODO: remove service reference, as it is redundant
-  override def stopContainer(appTag: AppTag, container: Container.Registered): IO[Unit] =
+  override def stopContainer(appTag: AppTag, container: Container.Registered): F[Unit] =
     for {
-      containers <- IO(
-        dockerClient.listContainers(
-          ListContainersParam.withStatusRestarting(),
-          ListContainersParam.withLabel(AppNameLabel, appTag.show),
-          ListContainersParam.withLabel(ContainerRefLabel, container.ref.show)
-        )).map(_.asScala.toList)
+      containers <- I
+        .lift(
+          dockerClient.listContainers(
+            ListContainersParam.withStatusRestarting(),
+            ListContainersParam.withLabel(AppNameLabel, appTag.show),
+            ListContainersParam.withLabel(ContainerRefLabel, container.ref.show)
+          ))
+        .map(_.asScala.toList)
       _ <- logger.info(s"stopping ${containers.size} containers")
 
     } yield ()

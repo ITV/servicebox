@@ -22,7 +22,7 @@ abstract class ServiceController[F[_]](logger: Logger[F], registry: ServiceRegis
       toStop = containerGroups.notMatched
       _ <- toStop.traverse(c => stopAndUpdateRegistry(registered, c))
 
-      toStart = registered.containers.filterNot(containerGroups.matched.contains)
+      toStart = registered.containers.map(_.running).filterNot(containerGroups.matched.contains)
       _ <- logger.debug(
         s"found ${containerGroups.matched.size} running containers matching the current spec. Starting ${toStart.size} ...")
       _ <- toStart.traverse(startAndUpdateRegistry(registered, _))

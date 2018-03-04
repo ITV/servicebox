@@ -1,3 +1,6 @@
+
+val fs2Version = "0.10.1"
+
 lazy val commonSettings = Seq(
   organization := "com.itv",
   name := "servicebox",
@@ -19,7 +22,7 @@ lazy val commonSettings = Seq(
     "org.scalatest" %% "scalatest" % "3.0.4" % "test",
     "ch.qos.logback" % "logback-classic" % "1.2.3",
     "com.typesafe.scala-logging" %% "scala-logging" % "3.8.0",
-    "co.fs2" %% "fs2-core" % "0.10.1"
+    "co.fs2" %% "fs2-core" % fs2Version
   )
 )
 
@@ -34,7 +37,7 @@ lazy val docker = (project in file("docker"))
     libraryDependencies ++= Seq(
       "com.spotify"  % "docker-client" % "8.10.0"
     )
-  )).dependsOn(core)
+  )).dependsOn(core % "compile->compile;test->test")
 
 lazy val root = (project in file("."))
   .aggregate(core, docker)

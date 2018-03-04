@@ -45,9 +45,10 @@ package object algebra {
                           imageName: String,
                           env: Map[String, String],
                           portMappings: List[Container.PortMapping],
-                          state: State) //TODO: consider replacing this with a boolean or adding more granular states
+                          state: State) //TODO: Introduce phantom types to represent state
         extends Container {
-      val toSpec = Spec(imageName, env, portMappings.map(_._2))
+      lazy val toSpec  = Spec(imageName, env, portMappings.map(_._2))
+      lazy val running = copy(state = State.Running)
     }
 
     trait Matcher[Repr] {
@@ -70,12 +71,9 @@ package object algebra {
         override val isSuccess = true
       }
 
-      //TODO: add some diffing here
+      //TODO: consider adding some diffing here
       case class Mismatch[Repr](matched: Repr, expected: Container.Registered, actual: Container.Registered)
           extends Result[Repr] {
-        override val isSuccess = false
-      }
-      case class Failure[Repr](matched: Repr, expected: Container.Registered, msg: String) extends Result[Repr] {
         override val isSuccess = false
       }
     }
