@@ -13,15 +13,17 @@ import com.spotify.docker.client.messages.{Container => JavaContainer, _}
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 
+object DockerContainerController {
+  val AppNameLabel      = "com.itv.servicebox.app"
+  val ContainerRefLabel = "com.itv.servicebox.container-ref"
+}
 class DockerContainerController[F[_]](dockerClient: DefaultDockerClient,
                                       imageRegistry: ImageRegistry[F],
                                       logger: Logger[F])(implicit I: ImpureEffect[F], M: MonadError[F, Throwable])
     extends algebra.ContainerController[F](imageRegistry, logger) {
+  import DockerContainerController._
 
   import cats.syntax.show._
-
-  private val AppNameLabel      = "com.itv.servicebox.app"
-  private val ContainerRefLabel = "com.itv.servicebox.container-ref"
 
   override def containerGroups(service: Service.Registered[F]) =
     for {

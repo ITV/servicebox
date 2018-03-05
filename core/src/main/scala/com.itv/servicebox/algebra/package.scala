@@ -14,12 +14,6 @@ package object algebra {
     implicit val appTagShow: Show[AppTag] = Show.show(tag => s"${tag.org}/${tag.appName}")
   }
 
-  sealed trait CleanupStrategy
-  object CleanupStrategy {
-    case object Pause   extends CleanupStrategy
-    case object Destroy extends CleanupStrategy
-  }
-
   sealed trait State
   object State {
     case object Running    extends State

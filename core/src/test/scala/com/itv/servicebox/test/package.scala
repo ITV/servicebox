@@ -14,7 +14,6 @@ package object test {
   case class Modules[F[_]](runner: Runner[F], serviceRegistry: ServiceRegistry[F], imageRegistry: ImageRegistry[F])
 
   object TestData {
-
     val portRange = 49152 to 49162
     val appTag    = AppTag("org", "test")
 
@@ -33,9 +32,15 @@ package object test {
       NonEmptyList.of(Container.Spec("rabbitmq:3.6.10-management", Map.empty, List(5672, 15672))),
       Service.ReadyCheck[F](_ => A.pure(true), 3.millis)
     )
+
+    val Default = TestData[IO](
+      portRange,
+      List(postgresSpec[IO], rabbitSpec[IO])
+    )
   }
 
   case class TestData[F[_]](portRange: Range, services: List[Service.Spec[F]])(implicit A: Applicative[F]) {
+
     def postgresSpec =
       services
         .find(_.name == TestData.postgresSpec[F].name)
@@ -45,6 +50,9 @@ package object test {
       services
         .find(_.name == TestData.rabbitSpec[F].name)
         .getOrElse(fail(s"Undefined service spec ${TestData.rabbitSpec.name}"))
+
+    def withPostgresOnly = copy(services = List(postgresSpec))
+    def withRabbitOnly   = copy(services = List(rabbitSpec))
   }
 
   case class Dependencies[F[_]](imageRegistry: ImageRegistry[F], containerController: ContainerController[F])
@@ -57,11 +65,18 @@ package object test {
     }
   }
 
-  def withDependencies(dependencies: Dependencies[IO])(testData: TestData[IO])(
-      f: (Runner[IO], ServiceRegistry[IO], Dependencies[IO]) => IO[Assertion]): Assertion = {
+  def withRunningServices(dependencies: Dependencies[IO])(testData: TestData[IO])(
+      runAssertion: (Runner[IO], ServiceRegistry[IO], Dependencies[IO]) => IO[Assertion]): IO[Assertion] = {
     val serviceRegistry = new InMemoryServiceRegistry(testData.portRange, IOLogger)
     val controller      = new IOServiceController(serviceRegistry, dependencies.containerController)
     val runner          = new IORunner(controller)
-    f(runner, serviceRegistry, dependencies).unsafeRunSync()
+
+    import cats.instances.list._
+    import cats.syntax.traverse._
+    import cats.syntax.flatMap._
+
+    val setupServices = testData.services.traverse(spec => runner.setUp(spec))
+
+    setupServices >> runAssertion(runner, serviceRegistry, dependencies)
   }
 }
