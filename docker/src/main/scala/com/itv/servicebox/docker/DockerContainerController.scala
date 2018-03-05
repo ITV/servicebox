@@ -27,7 +27,7 @@ class DockerContainerController[F[_]](dockerClient: DefaultDockerClient,
 
   override def containerGroups(service: Service.Registered[F]) =
     for {
-      runningContainersByImageName <- allRunningContainers(service)
+      runningContainersByImageName <- runningContainersByImageName(service.toSpec)
     } yield {
       service.containers.foldLeft(ContainerGroups.Empty) { (groups, container) =>
         val (matched, notMatched) = runningContainersByImageName
@@ -42,7 +42,7 @@ class DockerContainerController[F[_]](dockerClient: DefaultDockerClient,
       }
     }
 
-  private def allRunningContainers(spec: Service.Registered[F]): F[Map[String, List[JavaContainer]]] =
+  def runningContainersByImageName(spec: Service.Spec[F]): F[Map[String, List[JavaContainer]]] =
     I.lift(
         dockerClient.listContainers(ListContainersParam.withStatusRunning(),
                                     ListContainersParam.withLabel(AppNameLabel, spec.tag.show)))

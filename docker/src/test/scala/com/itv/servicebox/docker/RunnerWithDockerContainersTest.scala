@@ -1,12 +1,11 @@
 package com.itv.servicebox.docker
 
 import cats.effect.IO
+import cats.syntax.flatMap._
 import com.itv.servicebox.algebra._
 import com.itv.servicebox.interpreter.IOLogger
 import com.itv.servicebox.test.{Dependencies, RunnerTest, TestData}
 import com.spotify.docker.client.DefaultDockerClient
-import com.spotify.docker.client.DockerClient.ListContainersParam
-import cats.syntax.flatMap._
 import org.scalatest.Assertion
 
 class RunnerWithDockerContainersTest extends RunnerTest {
@@ -25,19 +24,14 @@ class RunnerWithDockerContainersTest extends RunnerTest {
     cleanUpContainers(testData.services) >> super.withServices(testData)(f)
 
   private def cleanUpContainers(services: List[Service.Spec[IO]]): IO[Unit] = {
-    val appTag = services.headOption.map(_.tag).getOrElse(TestData.appTag)
-    import DockerContainerController._
-    import scala.collection.JavaConverters._
-    import cats.syntax.show._
     import cats.instances.list._
+    import cats.syntax.foldable._
     import cats.syntax.traverse._
     import cats.syntax.functor._
 
-    IO(
-      dockerClient.listContainers(ListContainersParam.withStatusRunning(),
-                                  ListContainersParam.withLabel(AppNameLabel, appTag.show)))
-      .map(_.asScala.toList.map(_.id()))
-      .flatMap(ids => ids.traverse(id => IO(dockerClient.killContainer(id))))
+    services
+      .foldMapM(spec => containerController.runningContainersByImageName(spec).map(_.values.toList.flatten))
+      .flatMap(javaContainers => javaContainers.map(_.id()).traverse(id => IO(dockerClient.killContainer(id))))
       .void
 
   }
