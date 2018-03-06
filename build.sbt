@@ -1,6 +1,3 @@
-
-val fs2Version = "0.10.1"
-
 lazy val commonSettings = Seq(
   organization := "com.itv",
   name := "servicebox",
@@ -21,23 +18,36 @@ lazy val commonSettings = Seq(
     "org.typelevel" %% "cats-core" % "1.0.1",
     "org.scalatest" %% "scalatest" % "3.0.4" % "test",
     "ch.qos.logback" % "logback-classic" % "1.2.3",
-    "com.typesafe.scala-logging" %% "scala-logging" % "3.8.0",
-    "co.fs2" %% "fs2-core" % fs2Version
+    "com.typesafe.scala-logging" %% "scala-logging" % "3.8.0"
   )
 )
+
+def withDeps(p: Project)(dep: Project*): Project
+  = p.dependsOn(dep.map(_ % "compile->compile;test->test"): _*)
 
 lazy val core = (project in file("core"))
   .settings(
     commonSettings,
   ).settings(moduleName := "core")
 
-lazy val docker = (project in file("docker"))
+lazy val coreIO = withDeps((project in file("core-io"))
+  .settings(
+  moduleName := "core-io",
+    libraryDependencies ++= Seq(
+      "org.typelevel" %% "cats-effect" % "0.9"
+    )
+  ))(core)
+
+lazy val docker = withDeps((project in file("docker"))
   .settings(commonSettings ++ Seq(
     moduleName := "docker",
     libraryDependencies ++= Seq(
-      "com.spotify"  % "docker-client" % "8.10.0"
+      "com.spotify" % "docker-client" % "8.10.0"
     )
-  )).dependsOn(core % "compile->compile;test->test")
+  )))(core)
+
+lazy val dockerIO = withDeps((project in file("docker-io"))
+  .settings( moduleName := "docker-io"))(core, coreIO, docker)
 
 lazy val root = (project in file("."))
-  .aggregate(core, docker)
+  .aggregate(core, coreIO, docker, dockerIO)

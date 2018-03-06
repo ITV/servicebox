@@ -12,18 +12,22 @@ import com.spotify.docker.client.messages.{Container => JavaContainer, _}
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
+import cats.syntax.show._
+import cats.instances.list._
+import cats.syntax.traverse._
+import cats.syntax.option._
 
 object DockerContainerController {
-  val AppNameLabel      = "com.itv.servicebox.app"
-  val ContainerRefLabel = "com.itv.servicebox.container-ref"
+  private[docker] val AppTagLabel       = "com.itv.app-ref"
+  private[docker] val ServiceRefLabel   = "com.itv.servicebox.service-ref"
+  private[docker] val ContainerRefLabel = "com.itv.servicebox.container-ref"
 }
-class DockerContainerController[F[_]](dockerClient: DefaultDockerClient,
-                                      imageRegistry: ImageRegistry[F],
-                                      logger: Logger[F])(implicit I: ImpureEffect[F], M: MonadError[F, Throwable])
+class DockerContainerController[F[_]](
+    dockerClient: DefaultDockerClient,
+    imageRegistry: ImageRegistry[F],
+    logger: Logger[F])(implicit I: ImpureEffect[F], M: MonadError[F, Throwable], tag: AppTag)
     extends algebra.ContainerController[F](imageRegistry, logger) {
   import DockerContainerController._
-
-  import cats.syntax.show._
 
   override def containerGroups(service: Service.Registered[F]) =
     for {
@@ -34,57 +38,66 @@ class DockerContainerController[F[_]](dockerClient: DefaultDockerClient,
           .getOrElse(container.imageName, Nil)
           .map { javaContainer =>
             val info = dockerClient.inspectContainer(javaContainer.id())
-            ContainerMatcher(ContainerAndInfo(javaContainer, info), container.running)
+            ContainerMatcher(ContainerAndInfo(javaContainer, info), container)
           }
           .partition(_.isSuccess)
 
-        ContainerGroups(matched.map(_.expected), notMatched.map(_.expected))
+        ContainerGroups(matched.map(_.actual), notMatched.map(_.expected))
       }
     }
 
   def runningContainersByImageName(spec: Service.Spec[F]): F[Map[String, List[JavaContainer]]] =
-    I.lift(
-        dockerClient.listContainers(ListContainersParam.withStatusRunning(),
-                                    ListContainersParam.withLabel(AppNameLabel, spec.tag.show)))
+    I.lift(dockerClient.listContainers(queryParams(spec.ref, None): _*))
       .map(_.asScala.toList.groupBy(_.image()))
 
-  override protected def startContainer(tag: AppTag, container: Container.Registered): F[Unit] =
+  override protected def startContainer(serviceRef: Service.Ref, container: Container.Registered): F[Unit] =
     for {
-      res <- I.lift(dockerClient.createContainer(containerConfig(container, tag)))
+      res <- I.lift(dockerClient.createContainer(containerConfig(serviceRef, container)))
       _   <- I.lift(dockerClient.startContainer(res.id()))
 
     } yield ()
 
-  //TODO: remove service reference, as it is redundant
-  override def stopContainer(appTag: AppTag, container: Container.Registered): F[Unit] =
+  override def stopContainer(serviceRef: Service.Ref, containerRef: Container.Ref): F[Unit] =
+    killContainers(queryParams(serviceRef, containerRef.some): _*)
+
+  private[docker] def stopContainers =
+    killContainers(ListContainersParam.withStatusRunning(), ListContainersParam.withLabel(AppTagLabel, tag.show))
+
+  private def killContainers(params: ListContainersParam*): F[Unit] =
     for {
       containers <- I
-        .lift(
-          dockerClient.listContainers(
-            ListContainersParam.withStatusRestarting(),
-            ListContainersParam.withLabel(AppNameLabel, appTag.show),
-            ListContainersParam.withLabel(ContainerRefLabel, container.ref.show)
-          ))
+        .lift(dockerClient.listContainers(params: _*))
         .map(_.asScala.toList)
-      _ <- logger.info(s"stopping ${containers.size} containers")
+      _ <- containers.traverse(c => I.lift(dockerClient.killContainer(c.id)))
+      _ <- I.lift(logger.info(s"stopping ${containers.size} containers"))
 
     } yield ()
 
-  private def containerConfig(c: Container.Registered, tag: AppTag): ContainerConfig = {
-    val bindings = (mutable.Map.empty[Int, Int] ++ c.portMappings).map {
+  private def queryParams(serviceRef: Service.Ref, containerRef: Option[Container.Ref]): Seq[ListContainersParam] =
+    ListContainersParam.withStatusRunning() +: containerLabels(serviceRef, containerRef).map {
+      case (k, v) => ListContainersParam.withLabel(k, v)
+    }.toSeq
+
+  private def containerLabels(serviceRef: Service.Ref, containerRef: Option[Container.Ref]): Map[String, String] =
+    Map(ServiceRefLabel -> serviceRef.show, AppTagLabel -> tag.show) ++ containerRef
+      .map(ref => Map(ContainerRefLabel -> ref.show))
+      .getOrElse(Map.empty)
+
+  private def containerConfig(serviceRef: Service.Ref, container: Container.Registered): ContainerConfig = {
+    val bindings = (mutable.Map.empty[Int, Int] ++ container.portMappings).map {
       case (hostPort, containerPort) =>
         s"$containerPort/tcp" -> List(PortBinding.of("", hostPort.toString)).asJava
     }.asJava
 
     val hostConfig = HostConfig.builder().portBindings(bindings).build()
-    val labels     = mutable.Map.empty[String, String] ++ Map(AppNameLabel -> tag.show, ContainerRefLabel -> c.ref.show)
+    val labels     = mutable.Map.empty[String, String] ++ containerLabels(serviceRef, container.ref.some)
 
     ContainerConfig
       .builder()
       .labels(labels.asJava)
-      .env(c.env.map { case (k, v) => s"$k=$v" }.toList.asJava)
+      .env(container.env.map { case (k, v) => s"$k=$v" }.toList.asJava)
       .hostConfig(hostConfig)
-      .image(c.imageName)
+      .image(container.imageName)
       .build()
   }
 }

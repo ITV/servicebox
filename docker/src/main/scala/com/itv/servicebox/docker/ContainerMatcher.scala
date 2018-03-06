@@ -11,15 +11,10 @@ object ContainerMatcher extends Matcher[ContainerAndInfo] {
 
   override def apply(matched: ContainerAndInfo, expected: Container.Registered) = {
     val matcherResult = Matcher.Result(matched, expected)(_: Container.Registered)
-
-    val status =
-      if (matched.info.state.running())
-        algebra.State.Running
-      else algebra.State.Running
-
-    val env = containerEnvVars(matched.info, expected.env.keySet)
+    val env           = containerEnvVars(matched.info, expected.env.keySet)
     val parsed = Container
-      .Registered(expected.ref, matched.container.image(), env, containerPortMappings(matched.info), status)
+      .Registered(expected.ref, matched.container.image(), env, containerPortMappings(matched.info))
+
     matcherResult(parsed)
   }
 
@@ -40,7 +35,7 @@ object ContainerMatcher extends Matcher[ContainerAndInfo] {
       .filter { case (k, _) => envVarsWhitelist(k) }
       .toMap
 
-  private def containerPortMappings(info: ContainerInfo): List[(Int, Int)] = {
+  private def containerPortMappings(info: ContainerInfo): Set[(Int, Int)] = {
     import cats.instances.option._
     import cats.syntax.apply._
 
@@ -56,6 +51,6 @@ object ContainerMatcher extends Matcher[ContainerAndInfo] {
           val hostPort = binding.asScala.headOption.map(_.hostPort().toInt)
           (hostPort, containerPort).tupled
       }
-      .toList
+      .toSet
   }
 }

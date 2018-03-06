@@ -1,45 +1,46 @@
 package com.itv.servicebox
 
-import cats.Applicative
+import java.util.concurrent.Executor
+
 import cats.data.NonEmptyList
-import cats.effect.IO
+import cats.{Applicative, MonadError}
 import com.itv.servicebox.algebra._
-import com.itv.servicebox.interpreter.{IOLogger, IORunner, IOServiceController, InMemoryServiceRegistry}
 import org.scalatest.Assertion
 import org.scalatest.Matchers._
 
+import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 
 package object test {
-  case class Modules[F[_]](runner: Runner[F], serviceRegistry: ServiceRegistry[F], imageRegistry: ImageRegistry[F])
-
   object TestData {
-    val portRange = 49152 to 49162
-    val appTag    = AppTag("org", "test")
+    val portRange       = 49152 to 49162
+    implicit val appTag = AppTag("org", "test")
 
     def constantReady[F[_]](implicit A: Applicative[F]) = Service.ReadyCheck[F](_ => A.pure(true), 3.millis)
 
-    def postgresSpec[F[_]](implicit A: Applicative[F]) = Service.Spec[F](
-      appTag,
+    def postgresSpec[F[_]: Applicative] = Service.Spec[F](
       "db",
-      NonEmptyList.of(Container.Spec("postgres:9.5.4", Map("POSTGRES_DB" -> appTag.appName), List(5432))),
+      NonEmptyList.of(Container.Spec("postgres:9.5.4", Map("POSTGRES_DB" -> appTag.appName), Set(5432))),
       constantReady[F]
     )
 
     def rabbitSpec[F[_]](implicit A: Applicative[F]) = Service.Spec[F](
-      appTag,
       "rabbit",
-      NonEmptyList.of(Container.Spec("rabbitmq:3.6.10-management", Map.empty, List(5672, 15672))),
+      NonEmptyList.of(Container.Spec("rabbitmq:3.6.10-management", Map.empty, Set(5672, 15672))),
       Service.ReadyCheck[F](_ => A.pure(true), 3.millis)
     )
 
-    val Default = TestData[IO](
+    def default[F[_]: Applicative] = TestData[F](
       portRange,
-      List(postgresSpec[IO], rabbitSpec[IO])
+      List(postgresSpec[F], rabbitSpec[F]),
+      Nil
     )
   }
 
-  case class TestData[F[_]](portRange: Range, services: List[Service.Spec[F]])(implicit A: Applicative[F]) {
+  case class RunningContainer(container: Container.Registered, serviceRef: Service.Ref)
+
+  case class TestData[F[_]](portRange: Range, services: List[Service.Spec[F]], preExisting: List[RunningContainer])(
+      implicit A: Applicative[F]) {
 
     def postgresSpec =
       services
@@ -55,28 +56,50 @@ package object test {
     def withRabbitOnly   = copy(services = List(rabbitSpec))
   }
 
-  case class Dependencies[F[_]](imageRegistry: ImageRegistry[F], containerController: ContainerController[F])
-  object Dependencies {
-    val inMemoryIO = {
-      val logger        = IOLogger
-      val imageRegistry = new fake.InMemoryImageRegistry(logger)
-      val containerCtrl = new fake.ContainerController(imageRegistry, logger)
-      Dependencies[IO](imageRegistry, containerCtrl)
-    }
+  class Dependencies[F[_]](val logger: Logger[F],
+                           val imageRegistry: ImageRegistry[F],
+                           val containerController: ContainerController[F])(implicit I: ImpureEffect[F],
+                                                                            M: MonadError[F, Throwable],
+                                                                            tag: AppTag) {
+
+    def serviceRegistry(portRange: Range): ServiceRegistry[F] =
+      new InMemoryServiceRegistry[F](portRange, logger)
+
+    def serviceController(serviceRegistry: ServiceRegistry[F]): ServiceController[F] =
+      new ServiceController[F](logger, serviceRegistry, containerController)
+
+    def runner(ctrl: ServiceController[F]): Runner[F] =
+      new Runner[F](ctrl)
   }
 
-  def withRunningServices(dependencies: Dependencies[IO])(testData: TestData[IO])(
-      runAssertion: (Runner[IO], ServiceRegistry[IO], Dependencies[IO]) => IO[Assertion]): IO[Assertion] = {
-    val serviceRegistry = new InMemoryServiceRegistry(testData.portRange, IOLogger)
-    val controller      = new IOServiceController(serviceRegistry, dependencies.containerController)
-    val runner          = new IORunner(controller)
+  def withRunningServices[F[_]](deps: Dependencies[F])(testData: TestData[F])(
+      runAssertion: (Runner[F], ServiceRegistry[F], Dependencies[F]) => F[Assertion])(
+      implicit appTag: AppTag,
+      M: MonadError[F, Throwable],
+      I: ImpureEffect[F]): F[Assertion] = {
+
+    val serviceRegistry = deps.serviceRegistry(testData.portRange)
+    val controller      = deps.serviceController(serviceRegistry)
+    val runner          = deps.runner(controller)
 
     import cats.instances.list._
-    import cats.syntax.traverse._
+    import cats.syntax.foldable._
+    import cats.syntax.functor._
     import cats.syntax.flatMap._
 
-    val setupServices = testData.services.traverse(spec => runner.setUp(spec))
+    //TODO: treat appTag as a global (like execution context)
 
-    setupServices >> runAssertion(runner, serviceRegistry, dependencies)
+    //Note: use foldM and not traverse here to avoid parallel execution (which is the case of `Traverse[Future]`)
+    val setupRunningContainers =
+      testData.preExisting.foldM(())((_, c) =>
+        deps.containerController.fetchImageAndStartContainer(c.serviceRef, c.container).void)
+
+    val setupServices = testData.services.foldM(())((_, spec) => runner.setUp(spec).void)
+
+    setupRunningContainers >> setupServices >> runAssertion(runner, serviceRegistry, deps)
   }
+
+  implicit val SingleThreadExecutionContext = ExecutionContext.fromExecutor(new Executor {
+    def execute(task: Runnable) = task.run()
+  })
 }
