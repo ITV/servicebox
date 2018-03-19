@@ -8,7 +8,7 @@ import cats.syntax.monadError._
 import com.itv.servicebox.algebra.ServiceRegistry.ContainerMappings
 
 import scala.concurrent.{Await, ExecutionContext, Future}
-import scala.concurrent.duration.Duration
+import scala.concurrent.duration.{Duration, FiniteDuration}
 
 package object algebra {
   //TODO: consider adding an organisation/team name
@@ -79,7 +79,10 @@ package object algebra {
 
   object Service {
 
-    case class ReadyCheck[F[_]](isReady: ServiceRegistry.Endpoints => F[Boolean], waitTimeout: Duration)
+    case class ReadyCheck[F[_]](isReady: ServiceRegistry.Endpoints => F[Unit],
+                                checkInterval: FiniteDuration,
+                                timeout: FiniteDuration,
+                                label: Option[String] = None)
 
     case class Spec[F[_]](name: String, containers: NonEmptyList[Container.Spec], readyCheck: ReadyCheck[F])
         extends Service[F, Container.Spec] {

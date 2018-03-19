@@ -4,8 +4,10 @@ import cats.Monad
 import cats.syntax.flatMap._
 import cats.syntax.functor._
 
+import scala.concurrent.ExecutionContext
+
 class Runner[F[_]](ctrl: ServiceController[F])(implicit M: Monad[F]) {
-  def setUp(spec: Service.Spec[F]): F[Service.Registered[F]] =
+  def setUp(spec: Service.Spec[F])(implicit ec: ExecutionContext): F[Service.Registered[F]] =
     for {
       registered <- ctrl.start(spec)
       _          <- ctrl.waitUntilReady(registered)

@@ -34,7 +34,7 @@ lazy val coreIO = withDeps((project in file("core-io"))
   .settings(
   moduleName := "core-io",
     libraryDependencies ++= Seq(
-      "org.typelevel" %% "cats-effect" % "0.9"
+      "org.typelevel" %% "cats-effect" % "0.10"
     )
   ))(core)
 

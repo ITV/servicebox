@@ -1,15 +1,20 @@
 package com.itv.servicebox.test
 
 import java.net.{ServerSocket, Socket}
+import java.util.concurrent.atomic.AtomicInteger
 
 import cats.MonadError
+import cats.data.NonEmptyList
 import cats.syntax.applicativeError._
 import cats.syntax.flatMap._
 import cats.syntax.functor._
+import com.itv.servicebox.algebra.Service.ReadyCheck
 import com.itv.servicebox.algebra._
 import org.scalactic.TypeCheckedTripleEquals
 import org.scalatest.{Assertion, FreeSpec, Matchers, Succeeded}
 
+import scala.concurrent.duration._
+import scala.concurrent.TimeoutException
 import scala.util.{Success, Try}
 
 abstract class RunnerTest[F[_]](implicit M: MonadError[F, Throwable], I: ImpureEffect[F])
@@ -163,6 +168,45 @@ abstract class RunnerTest[F[_]](implicit M: MonadError[F, Throwable], I: ImpureE
         }.attempt)
         .left
         .get should ===(expected)
+    }
+
+    "raises an error if a service ready-check times out" in {
+      val testData = TestData.default[F]
+      val rabbitSpec = TestData
+        .rabbitSpec[F]
+        .copy(
+          readyCheck = ReadyCheck(_ => M.raiseError[Unit](new IllegalStateException(s"Cannot access test service")),
+                                  10.millis,
+                                  30.millis))
+
+      I.runSync(withServices(testData.copy(services = List(rabbitSpec))) {
+          case _ =>
+            M.pure(Succeeded)
+        }.attempt)
+        .left
+        .get shouldBe a[TimeoutException]
+    }
+    "recovers from errors when ready-checks eventually succeed" in {
+      val testData = TestData.default[F]
+      val counter  = new AtomicInteger(0)
+      val rabbitSpec = TestData
+        .rabbitSpec[F]
+        .copy(readyCheck = ReadyCheck(_ => {
+          if (counter.getAndIncrement() < 3)
+            M.raiseError[Unit](new IllegalStateException(s"Cannot access test service"))
+          else
+            M.pure(())
+        }, 10.millis, 1.second))
+
+      runServices(testData.copy(services = List(rabbitSpec))) { (_, serviceRegistry, deps) =>
+        for {
+          service           <- serviceRegistry.unsafeLookup(rabbitSpec)
+          runningContainers <- deps.containerController.runningContainers(service)
+        } yield {
+          service.toSpec should ===(rabbitSpec)
+          runningContainers should have size 1
+        }
+      }
     }
   }
   "tearDown" - {

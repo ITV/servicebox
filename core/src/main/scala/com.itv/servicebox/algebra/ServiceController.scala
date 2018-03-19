@@ -7,9 +7,12 @@ import cats.syntax.functor._
 import cats.syntax.show._
 import cats.syntax.traverse._
 
-class ServiceController[F[_]](logger: Logger[F], registry: ServiceRegistry[F], ctrl: ContainerController[F])(
-    implicit M: MonadError[F, Throwable],
-    tag: AppTag) {
+import scala.concurrent.ExecutionContext
+
+class ServiceController[F[_]](logger: Logger[F],
+                              registry: ServiceRegistry[F],
+                              ctrl: ContainerController[F],
+                              scheduler: Scheduler[F])(implicit M: MonadError[F, Throwable], tag: AppTag) {
 
   def start(spec: Service.Spec[F]): F[Service.Registered[F]] =
     for {
@@ -52,6 +55,9 @@ class ServiceController[F[_]](logger: Logger[F], registry: ServiceRegistry[F], c
     } yield ()
   }
 
-  def waitUntilReady(service: Service.Registered[F]): F[Unit] =
-    service.readyCheck.isReady(service.endpoints).void
+  def waitUntilReady(service: Service.Registered[F])(implicit ec: ExecutionContext): F[Unit] = {
+    def check = () => service.readyCheck.isReady(service.endpoints)
+    val label = service.readyCheck.label.getOrElse(service.ref.show)
+    scheduler.retry(check, service.readyCheck.checkInterval, service.readyCheck.timeout, label)
+  }
 }

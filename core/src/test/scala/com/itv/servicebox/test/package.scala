@@ -4,7 +4,7 @@ import java.util.concurrent.Executor
 
 import cats.data.NonEmptyList
 import cats.{Applicative, MonadError}
-import com.itv.servicebox.algebra._
+import com.itv.servicebox.algebra.{ImpureEffect, _}
 import org.scalatest.Assertion
 import org.scalatest.Matchers._
 
@@ -16,18 +16,19 @@ package object test {
     val portRange       = 49152 to 49162
     implicit val appTag = AppTag("org", "test")
 
-    def constantReady[F[_]](implicit A: Applicative[F]) = Service.ReadyCheck[F](_ => A.pure(true), 3.millis)
+    def constantReady[F[_]](label: String)(implicit A: Applicative[F]): Service.ReadyCheck[F] =
+      Service.ReadyCheck[F](_ => A.unit, 1.millis, 3.millis)
 
     def postgresSpec[F[_]: Applicative] = Service.Spec[F](
       "db",
       NonEmptyList.of(Container.Spec("postgres:9.5.4", Map("POSTGRES_DB" -> appTag.appName), Set(5432))),
-      constantReady[F]
+      constantReady[F]("postgres ready check")
     )
 
     def rabbitSpec[F[_]](implicit A: Applicative[F]) = Service.Spec[F](
       "rabbit",
       NonEmptyList.of(Container.Spec("rabbitmq:3.6.10-management", Map.empty, Set(5672, 15672))),
-      Service.ReadyCheck[F](_ => A.pure(true), 3.millis)
+      constantReady("rabbit ready check")
     )
 
     def default[F[_]: Applicative] = TestData[F](
@@ -56,17 +57,17 @@ package object test {
     def withRabbitOnly   = copy(services = List(rabbitSpec))
   }
 
-  class Dependencies[F[_]](val logger: Logger[F],
-                           val imageRegistry: ImageRegistry[F],
-                           val containerController: ContainerController[F])(implicit I: ImpureEffect[F],
-                                                                            M: MonadError[F, Throwable],
-                                                                            tag: AppTag) {
+  class Dependencies[F[_]](
+      val logger: Logger[F],
+      val imageRegistry: ImageRegistry[F],
+      val containerController: ContainerController[F],
+      val scheduler: Scheduler[F])(implicit I: ImpureEffect[F], M: MonadError[F, Throwable], tag: AppTag) {
 
     def serviceRegistry(portRange: Range): ServiceRegistry[F] =
       new InMemoryServiceRegistry[F](portRange, logger)
 
     def serviceController(serviceRegistry: ServiceRegistry[F]): ServiceController[F] =
-      new ServiceController[F](logger, serviceRegistry, containerController)
+      new ServiceController[F](logger, serviceRegistry, containerController, scheduler)
 
     def runner(ctrl: ServiceController[F]): Runner[F] =
       new Runner[F](ctrl)
@@ -75,6 +76,7 @@ package object test {
   def withRunningServices[F[_]](deps: Dependencies[F])(testData: TestData[F])(
       runAssertion: (Runner[F], ServiceRegistry[F], Dependencies[F]) => F[Assertion])(
       implicit appTag: AppTag,
+      ec: ExecutionContext,
       M: MonadError[F, Throwable],
       I: ImpureEffect[F]): F[Assertion] = {
 
@@ -87,9 +89,8 @@ package object test {
     import cats.syntax.functor._
     import cats.syntax.flatMap._
 
-    //TODO: treat appTag as a global (like execution context)
-
-    //Note: use foldM and not traverse here to avoid parallel execution (which is the case of `Traverse[Future]`)
+    //Note: we use foldM and not traverse here to avoid parallel execution
+    // (which happens in the case of the default cats instance of `Traverse[Future]`)
     val setupRunningContainers =
       testData.preExisting.foldM(())((_, c) =>
         deps.containerController.fetchImageAndStartContainer(c.serviceRef, c.container).void)

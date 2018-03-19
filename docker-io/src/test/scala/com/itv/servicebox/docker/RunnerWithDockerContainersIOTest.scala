@@ -1,5 +1,7 @@
 package com.itv.servicebox.docker
 
+import java.util.concurrent.{Executors, ScheduledExecutorService}
+
 import cats.effect.IO
 import com.itv.servicebox.algebra._
 import com.itv.servicebox.interpreter.IOLogger
@@ -7,14 +9,16 @@ import com.itv.servicebox.test.{Dependencies, RunnerTest, TestData}
 import com.spotify.docker.client.DefaultDockerClient
 import cats.syntax.flatMap._
 import org.scalatest.{Assertion, BeforeAndAfterAll}
-import com.itv.servicebox.interpreter.ioEffect
+import com.itv.servicebox.interpreter.{ioEffect, ioScheduler}
 
 class RunnerWithDockerContainersIOTest extends RunnerTest[IO] with BeforeAndAfterAll {
   //TODO: create an instance module
 
   val dockerClient = DefaultDockerClient.fromEnv.build
 
-  val logger        = IOLogger
+  implicit val logger                             = IOLogger
+  implicit val executor: ScheduledExecutorService = Executors.newScheduledThreadPool(1)
+
   val imageRegistry = new DockerImageRegistry[IO](dockerClient, logger)
 
   def containerController = {
@@ -23,7 +27,7 @@ class RunnerWithDockerContainersIOTest extends RunnerTest[IO] with BeforeAndAfte
   }
 
   override def dependencies(implicit tag: AppTag): Dependencies[IO] =
-    new Dependencies(logger, imageRegistry, containerController)
+    new Dependencies(logger, imageRegistry, containerController, ioScheduler)
 
   override def withServices(testData: TestData[IO])(
       f: (Runner[IO], ServiceRegistry[IO], Dependencies[IO]) => IO[Assertion])(implicit tag: AppTag) =
