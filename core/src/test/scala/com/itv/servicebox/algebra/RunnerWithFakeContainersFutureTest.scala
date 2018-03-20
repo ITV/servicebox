@@ -5,9 +5,9 @@ import java.util.concurrent.{Executor, ExecutorService, Executors, ScheduledExec
 import com.itv.servicebox.fake
 import com.itv.servicebox.interpreter._
 import com.itv.servicebox.test.{Dependencies, RunnerTest}
+import scala.concurrent.ExecutionContext.Implicits.global
 import cats.instances.future._
 
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 
 class RunnerWithFakeContainersFutureTest extends RunnerTest[Future] {

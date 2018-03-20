@@ -1,6 +1,6 @@
 package com.itv.servicebox
 
-import java.util.concurrent.{ScheduledExecutorService, TimeUnit, TimeoutException}
+import java.util.concurrent.{TimeUnit, TimeoutException}
 
 import cats.effect.{IO, Timer}
 import cats.syntax.flatMap._
@@ -41,37 +41,4 @@ package object interpreter {
       attemptAction(0L)
     }
   }
-
-  private def ioSchedulerOld(implicit executor: ScheduledExecutorService, logger: Logger[IO]): Scheduler[IO] =
-    new Scheduler[IO](logger) {
-      override def retry[A](f: () => IO[A], interval: FiniteDuration, timeout: FiniteDuration, label: String)(
-          implicit ec: ExecutionContext): IO[A] = IO.async { cb =>
-        import scala.concurrent.duration._
-        val backgroundTask = executor.scheduleAtFixedRate(
-          new Runnable {
-            override def run() = {
-              //TODO: this looks pretty gross!
-              val maybeDone =
-                (logger.debug(s"attempting to run ready check for service $label") >> f()).unsafeRunTimed(200.millis)
-              maybeDone.foreach(a => cb(Right(a)))
-            }
-
-          },
-          0L,
-          interval.toMillis,
-          TimeUnit.MILLISECONDS
-        )
-
-        executor.schedule(
-          new Runnable {
-            override def run() = {
-              backgroundTask.cancel(true)
-              cb(Left(new TimeoutException(s"ReadyCheck $label timed out!")))
-            }
-          },
-          timeout.toMillis,
-          TimeUnit.MILLISECONDS
-        )
-      }
-    }
 }

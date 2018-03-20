@@ -1,7 +1,5 @@
 package com.itv.servicebox
 
-import java.util.concurrent.Executor
-
 import cats.data.NonEmptyList
 import cats.{Applicative, MonadError}
 import com.itv.servicebox.algebra.{ImpureEffect, _}
@@ -99,8 +97,4 @@ package object test {
 
     setupRunningContainers >> setupServices >> runAssertion(runner, serviceRegistry, deps)
   }
-
-  implicit val SingleThreadExecutionContext = ExecutionContext.fromExecutor(new Executor {
-    def execute(task: Runnable) = task.run()
-  })
 }

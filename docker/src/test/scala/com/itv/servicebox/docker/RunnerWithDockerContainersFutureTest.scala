@@ -3,20 +3,21 @@ package com.itv.servicebox.docker
 import java.util.concurrent.{Executors, ScheduledExecutorService}
 
 import cats.instances.future._
-import cats.syntax.flatMap._
 import com.itv.servicebox.algebra._
 import com.itv.servicebox.interpreter.FutureLogger
-import com.itv.servicebox.test.{Dependencies, RunnerTest, SingleThreadExecutionContext, TestData}
+import com.itv.servicebox.test.{Dependencies, RunnerTest, TestData}
 import com.spotify.docker.client.DefaultDockerClient
+import cats.syntax.flatMap._
 import org.scalatest.{Assertion, BeforeAndAfterAll}
 
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, Future}
+import scala.concurrent.ExecutionContext.Implicits.global
 
 class RunnerWithDockerContainersFutureTest extends RunnerTest[Future] with BeforeAndAfterAll {
   val dockerClient = DefaultDockerClient.fromEnv.build
 
-  implicit val executor: ScheduledExecutorService = Executors.newScheduledThreadPool(2)
+  implicit val executor: ScheduledExecutorService = Executors.newScheduledThreadPool(3)
   implicit val logger                             = new FutureLogger
   val imageRegistry                               = new DockerImageRegistry[Future](dockerClient, logger)
 

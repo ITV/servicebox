@@ -14,10 +14,10 @@ import org.scalactic.TypeCheckedTripleEquals
 import org.scalatest.{Assertion, FreeSpec, Matchers, Succeeded}
 
 import scala.concurrent.duration._
-import scala.concurrent.TimeoutException
+import scala.concurrent.{ExecutionContext, TimeoutException}
 import scala.util.{Success, Try}
 
-abstract class RunnerTest[F[_]](implicit M: MonadError[F, Throwable], I: ImpureEffect[F])
+abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, Throwable], I: ImpureEffect[F])
     extends FreeSpec
     with Matchers
     with TypeCheckedTripleEquals {

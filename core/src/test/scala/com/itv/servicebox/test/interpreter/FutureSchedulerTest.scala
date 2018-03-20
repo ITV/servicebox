@@ -15,7 +15,7 @@ import scala.concurrent.{Future, TimeoutException}
 import scala.language.postfixOps
 
 class FutureSchedulerTest extends AsyncFreeSpec with Matchers with StrictLogging {
-  implicit val executor     = Executors.newScheduledThreadPool(1)
+  implicit val executor     = Executors.newScheduledThreadPool(2)
   implicit val futureLogger = new FutureLogger()
 
   val tmpDirPath = Paths.get(System.getProperty("java.io.tmpdir")).resolve("servicebox")

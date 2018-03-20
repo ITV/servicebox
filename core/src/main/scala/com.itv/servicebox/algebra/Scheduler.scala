@@ -18,7 +18,6 @@ object Scheduler {
     new Scheduler[Future](logger) {
       override def retry[A](f: () => Future[A], interval: FiniteDuration, timeout: FiniteDuration, label: String)(
           implicit ec: ExecutionContext): Future[A] =
-        //enforce f() executes within the expected time!
         f().recoverWith {
           case NonFatal(_) =>
             val promise = Promise[A]()
@@ -30,7 +29,9 @@ object Scheduler {
                     case scala.util.Success(a) =>
                       if (!promise.isCompleted)
                         promise.success(a)
-                    case _ => () //TODO: log something
+                    case scala.util.Failure(err) =>
+                      ()
+                      logger.warn(s"promise already fulfilled: $err") //TODO: log something
                   }
               },
               0L,

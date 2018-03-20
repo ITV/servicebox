@@ -1,7 +1,5 @@
 package com.itv.servicebox.docker
 
-import java.util.concurrent.{Executors, ScheduledExecutorService}
-
 import cats.effect.IO
 import com.itv.servicebox.algebra._
 import com.itv.servicebox.interpreter.IOLogger
@@ -10,14 +8,13 @@ import com.spotify.docker.client.DefaultDockerClient
 import cats.syntax.flatMap._
 import org.scalatest.{Assertion, BeforeAndAfterAll}
 import com.itv.servicebox.interpreter.{ioEffect, ioScheduler}
+import scala.concurrent.ExecutionContext.Implicits.global
 
 class RunnerWithDockerContainersIOTest extends RunnerTest[IO] with BeforeAndAfterAll {
-  //TODO: create an instance module
 
   val dockerClient = DefaultDockerClient.fromEnv.build
 
-  implicit val logger                             = IOLogger
-  implicit val executor: ScheduledExecutorService = Executors.newScheduledThreadPool(1)
+  implicit val logger = IOLogger
 
   val imageRegistry = new DockerImageRegistry[IO](dockerClient, logger)
 
