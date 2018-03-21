@@ -1,0 +1,32 @@
+digraph {
+  compound=true;
+  rankdir=LR;
+
+
+    
+  imgReg[label="ImageRegistry", style="rounded,filled", fillcolor="#FFBD73", shape="box"];
+  srvReg[label="ServiceRegistry", style="rounded,filled", fillcolor="#FFBD73", shape="box"];
+  memSrvReg[label="InMemoryServiceRegistry", style="rounded,filled", fillcolor="#FF8700", shape="box"];
+  ctrCtrl[label="ContainerController", style="rounded,filled", fillcolor="#FFBD73", shape="box"];
+  dckrCtrl[label="DockerController", style="rounded,filled", fillcolor="#FF8700", shape="box"];
+  srvCtrl[label="ServiceController", style="rounded,filled", fillcolor="#FFBD73", shape="box"];
+  scheduler[label="Scheduler", style="rounded,filled", fillcolor="#FFBD73", shape="box"];
+  runner[label="Runner", style="rounded,filled", fillcolor="#FFBD73", shape="box"];
+
+
+  subgraph a {
+    edge [arrowhead = ediamond]
+
+    ctrCtrl -> imgReg
+    srvCtrl -> ctrCtrl
+    srvCtrl -> srvReg
+    srvCtrl -> scheduler
+    runner -> srvCtrl
+  }
+
+  subgraph b {
+    memSrvReg -> srvReg
+    dckrCtrl -> ctrCtrl
+  }
+
+}  

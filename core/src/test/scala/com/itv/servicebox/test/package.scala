@@ -2,7 +2,7 @@ package com.itv.servicebox
 
 import cats.data.NonEmptyList
 import cats.{Applicative, MonadError}
-import com.itv.servicebox.algebra.{ImpureEffect, _}
+import com.itv.servicebox.algebra.{ImpureEffect, InMemoryServiceRegistry, _}
 import org.scalatest.Assertion
 import org.scalatest.Matchers._
 

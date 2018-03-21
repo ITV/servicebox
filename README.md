@@ -19,15 +19,20 @@ our development machines and on our continuous integration environment.
 By allowing us to reproduce a realistic production environment with great flexibility and speed, containers
 are helping us increase our confidence in our testing and continuous delivery process.
 
-## features
+## Functionality and key library components
 
-- A simple algebra/dsl to define a test dependency (i.e. `Service`) as an aggregate of one or several containers.
-- Interpreters to run such algebra using Docker as container technology, and `scala.concurrent.Future` or `cats.effect.IO`
+The `servicebox.algebra` package contains the following:
+
+- A set of case classes/dsl to define a test dependency (aka `Service`) as an aggregate of one or serveral `Containers`.
+- An `InMemoryServiceRegistry` that can automatically assign available host ports to a service containers.
+- A `Scheduler`, which provides a simple interface to repeatedly retry effectful operations (i.e. checking if a service is ready)
+- An interpreters to setup/check/teardown test dependencies using Docker as container technology, and `scala.concurrent.Future` or `cats.effect.IO`
 as the effect system.
+
+![Component diagram](docs/modules.png)
 
 ## Modules
 
-- core
-- core-io
-- docker
-- docker-io
+- `core`: the core algebra, with only support for `scala.concurrent.Future`.
+- `core-io`: optional support for `cats.effect.IO`
+- `docker`: a docker interpreter for the core algebra.

@@ -1,6 +1,5 @@
 package com.itv.servicebox.algebra
 
-import java.io.IOException
 import java.net.Socket
 import java.util.concurrent.atomic.AtomicReference
 
@@ -17,7 +16,6 @@ import cats.syntax.traverse._
 import com.itv.servicebox.algebra.Container.PortMapping
 import com.itv.servicebox.algebra.ServiceRegistry.{ContainerMappings, Location}
 
-import scala.annotation.tailrec
 import scala.util.Try
 
 class InMemoryServiceRegistry[F[_]](range: Range, logger: Logger[F])(implicit tag: AppTag,
