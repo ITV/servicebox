@@ -4,7 +4,9 @@ A type safe library to define and run test dependencies using scala and Docker c
 
 ### Status
 
-- still incomplete, will publish a first release soon!
+[![Build Status](https://travis-ci.org/ITV/servicebox.svg?branch=master)](https://travis-ci.org/ITV/servicebox)
+
+Not feature-complete yet, will publish a first release soon!
 
 ## Containers and integration testing
 

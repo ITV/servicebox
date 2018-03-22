@@ -2,13 +2,12 @@ digraph {
   compound=true;
   rankdir=LR;
 
-
-    
   imgReg[label="ImageRegistry", style="rounded,filled", fillcolor="#FFBD73", shape="box"];
   srvReg[label="ServiceRegistry", style="rounded,filled", fillcolor="#FFBD73", shape="box"];
   memSrvReg[label="InMemoryServiceRegistry", style="rounded,filled", fillcolor="#FF8700", shape="box"];
   ctrCtrl[label="ContainerController", style="rounded,filled", fillcolor="#FFBD73", shape="box"];
   dckrCtrl[label="DockerController", style="rounded,filled", fillcolor="#FF8700", shape="box"];
+  dckrImgReg[label="DockerImageRegistry", style="rounded,filled", fillcolor="#FF8700", shape="box"];
   srvCtrl[label="ServiceController", style="rounded,filled", fillcolor="#FFBD73", shape="box"];
   scheduler[label="Scheduler", style="rounded,filled", fillcolor="#FFBD73", shape="box"];
   runner[label="Runner", style="rounded,filled", fillcolor="#FFBD73", shape="box"];
@@ -26,6 +25,7 @@ digraph {
 
   subgraph b {
     memSrvReg -> srvReg
+    dckrImgReg -> imgReg
     dckrCtrl -> ctrCtrl
   }
 

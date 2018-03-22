@@ -2,7 +2,7 @@ lazy val commonSettings = Seq(
   organization := "com.itv",
   name := "servicebox",
   version := "0.1.0-SNAPSHOT",
-  scalaVersion := "2.12.4",
+  scalaVersion := "2.12.5",
   scalacOptions ++= Seq(
     "-target:jvm-1.8",
     "-encoding", "UTF-8",
