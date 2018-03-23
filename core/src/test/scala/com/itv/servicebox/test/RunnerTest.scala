@@ -22,6 +22,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
     with Matchers
     with TypeCheckedTripleEquals {
 
+  //TODO: cleanup appTag mess!
   def dependencies(implicit tag: AppTag): Dependencies[F]
 
   def withServices(testData: TestData[F])(f: (Runner[F], ServiceRegistry[F], Dependencies[F]) => F[Assertion])(
@@ -36,7 +37,6 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
 
   "setUp" - {
     "initialises the service and updates the registry" in {
-      //TODO: cleanup appTag mess!
       val testData = TestData.default[F].withPostgresOnly
       runServices(testData) { (_, serviceRegistry, deps) =>
         for {
@@ -145,7 +145,6 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
         }
       }
     }
-
     "raises an error if the unallocated port range cannot fit the ports in the spec" in {
       I.runSync(withServices(TestData.default[F].copy(portRange = TestData.portRange.take(1))) {
           case _ =>
@@ -215,7 +214,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
       runServices(testData) { (runner, registry, deps) =>
         for {
           service           <- registry.unsafeLookup(testData.postgresSpec)
-          _                 <- runner.tearDown(service)
+          _                 <- runner.tearDown
           maybeSrv          <- registry.lookup(service.ref)
           runningContainers <- deps.containerController.runningContainers(service)
         } yield {

@@ -15,7 +15,7 @@ package object test {
     implicit val appTag = AppTag("org", "test")
 
     def constantReady[F[_]](label: String)(implicit A: Applicative[F]): Service.ReadyCheck[F] =
-      Service.ReadyCheck[F](_ => A.unit, 1.millis, 3.millis)
+      Service.ReadyCheck[F](_ => A.unit, 2.millis, 3.millis)
 
     def postgresSpec[F[_]: Applicative] = Service.Spec[F](
       "db",
@@ -38,6 +38,9 @@ package object test {
 
   case class RunningContainer(container: Container.Registered, serviceRef: Service.Ref)
 
+  //TODO: rewrite this as an ADT, allowing different setup behaviours
+  // - WithPreExisting(...)
+  // - TestData(...)
   case class TestData[F[_]](portRange: Range, services: List[Service.Spec[F]], preExisting: List[RunningContainer])(
       implicit A: Applicative[F]) {
 
@@ -67,10 +70,11 @@ package object test {
     def serviceController(serviceRegistry: ServiceRegistry[F]): ServiceController[F] =
       new ServiceController[F](logger, serviceRegistry, containerController, scheduler)
 
-    def runner(ctrl: ServiceController[F]): Runner[F] =
-      new Runner[F](ctrl)
+    def runner(ctrl: ServiceController[F], registry: ServiceRegistry[F], services: List[Service.Spec[F]]): Runner[F] =
+      new Runner[F](ctrl, registry)(services: _*)
   }
 
+  //TODO: return list of registered services instead than registry
   def withRunningServices[F[_]](deps: Dependencies[F])(testData: TestData[F])(
       runAssertion: (Runner[F], ServiceRegistry[F], Dependencies[F]) => F[Assertion])(
       implicit appTag: AppTag,
@@ -80,7 +84,7 @@ package object test {
 
     val serviceRegistry = deps.serviceRegistry(testData.portRange)
     val controller      = deps.serviceController(serviceRegistry)
-    val runner          = deps.runner(controller)
+    val runner          = deps.runner(controller, serviceRegistry, testData.services)
 
     import cats.instances.list._
     import cats.syntax.foldable._
@@ -93,8 +97,6 @@ package object test {
       testData.preExisting.foldM(())((_, c) =>
         deps.containerController.fetchImageAndStartContainer(c.serviceRef, c.container).void)
 
-    val setupServices = testData.services.foldM(())((_, spec) => runner.setUp(spec).void)
-
-    setupRunningContainers >> setupServices >> runAssertion(runner, serviceRegistry, deps)
+    setupRunningContainers >> runner.setUp >> runAssertion(runner, serviceRegistry, deps)
   }
 }

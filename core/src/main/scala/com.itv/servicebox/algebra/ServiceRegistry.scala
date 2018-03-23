@@ -5,6 +5,9 @@ import cats.data.NonEmptyList
 import com.itv.servicebox.algebra.Container.PortMapping
 import com.itv.servicebox.algebra.ServiceRegistry.ContainerMappings
 import cats.syntax.show._
+import cats.syntax.functor._
+import cats.syntax.option._
+import cats.syntax.flatMap._
 
 abstract class ServiceRegistry[F[_]](logger: Logger[F])(implicit M: MonadError[F, Throwable], appTag: AppTag) {
   def register(service: Service.Spec[F]): F[Service.Registered[F]]
@@ -12,6 +15,15 @@ abstract class ServiceRegistry[F[_]](logger: Logger[F])(implicit M: MonadError[F
   def updatePortMappings(id: Service.Ref, cId: Container.Ref, mapping: Set[PortMapping]): F[Unit]
 
   def lookup(id: Service.Ref): F[Option[ContainerMappings]]
+
+  def lookup(spec: Service.Spec[F]): F[Option[Service.Registered[F]]] =
+    for {
+      maybeMappings <- lookup(spec.ref)
+      maybeService <- maybeMappings.fold(M.pure(none[Service.Registered[F]])) { mappings =>
+        addMappings(spec)(mappings).map(_.some)
+      }
+
+    } yield maybeService
 
   def unsafeLookup(spec: Service.Spec[F]): F[Service.Registered[F]] =
     M.flatMap(lookup(spec.ref))(
