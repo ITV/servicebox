@@ -11,7 +11,7 @@ import scala.concurrent.duration._
 
 package object test {
   object TestData {
-    val portRange       = 49152 to 49162
+    val portRange       = 49162 to 49192
     implicit val appTag = AppTag("org", "test")
 
     def constantReady[F[_]](label: String)(implicit A: Applicative[F]): Service.ReadyCheck[F] =
@@ -40,7 +40,7 @@ package object test {
 
   //TODO: rewrite this as an ADT, allowing different setup behaviours
   // - WithPreExisting(...)
-  // - TestData(...)
+  // - Default(...)
   case class TestData[F[_]](portRange: Range, services: List[Service.Spec[F]], preExisting: List[RunningContainer])(
       implicit A: Applicative[F]) {
 
