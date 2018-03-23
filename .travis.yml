@@ -6,6 +6,4 @@ scala:
 jdk:
   - oraclejdk8
 script:
-  - sbt ++$TRAVIS_SCALA_VERSION ";core/test;coreIO/test"
-  - sbt ++$TRAVIS_SCALA_VERSION ";docker/test"
-  - sbt ++$TRAVIS_SCALA_VERSION ";dockerIO/test"
+  - sbt ++$TRAVIS_SCALA_VERSION ";core/test;coreIO/test;docker/test;dockerIO/test"
