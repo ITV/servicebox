@@ -49,7 +49,8 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
       }
     }
     "assigns a host port for each container port in the spec" in {
-      val data = TestData.default[F].withRabbitOnly
+      val data0 = TestData.default[F].withRabbitOnly
+      val data  = data0.copy(portRange = data0.portRange.reverse)
       runServices(data) { (_, serviceRegistry, _) =>
         for {
           service <- serviceRegistry.unsafeLookup(data.rabbitSpec)
@@ -63,8 +64,8 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
       }
     }
     "does not assign a port that is in-range, but bound to a running service" in {
-      val server   = new ServerSocket(TestData.portRange.head)
       val testData = TestData.default[F].withRabbitOnly
+      val server   = new ServerSocket(TestData.portRange.head)
       try {
         runServices(testData) { (_, serviceRegistry, _) =>
           for {
