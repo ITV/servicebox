@@ -10,6 +10,8 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.FiniteDuration
 
 package object interpreter {
+  implicit val ioLogger: Logger[IO] = IOLogger
+
   implicit val ioEffect: ImpureEffect[IO] = new ImpureEffect[IO]() {
     override def lift[A](a: => A): IO[A]      = IO(a)
     override def runSync[A](effect: IO[A]): A = effect.unsafeRunSync()

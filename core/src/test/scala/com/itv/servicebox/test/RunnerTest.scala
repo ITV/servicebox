@@ -48,6 +48,19 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
         }
       }
     }
+
+    "returns a list of registered services, preserving the order in which they are specified" in {
+      val testData = TestData.default[F]
+      runServices(testData) { (runner, _, _) =>
+        for {
+          registered <- runner.setUp
+
+        } yield {
+          registered.map(_.ref) should ===(testData.services.map(_.ref))
+        }
+      }
+    }
+
     "assigns a host port for each container port in the spec" in {
       val data0 = TestData.default[F].withRabbitOnly
       val data  = data0.copy(portRange = data0.portRange.reverse)
@@ -113,6 +126,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
         }
       }
     }
+
     "tears down containers that do not match the spec" in {
       val testData      = TestData.default[F].withPostgresOnly
       val serviceSpec   = testData.postgresSpec
@@ -185,6 +199,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
         .left
         .get shouldBe a[TimeoutException]
     }
+
     "recovers from errors when ready-checks eventually succeed" in {
       val testData = TestData.default[F]
       val counter  = new AtomicInteger(0)
@@ -208,6 +223,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
       }
     }
   }
+
   "tearDown" - {
     "shuts down the services and updates the registry" in {
       val testData = TestData.default[F]

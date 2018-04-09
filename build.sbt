@@ -1,3 +1,5 @@
+val monocleVersion = "1.5.0"
+
 lazy val commonSettings = Seq(
   organization := "com.itv",
   name := "servicebox",
@@ -17,6 +19,8 @@ lazy val commonSettings = Seq(
   libraryDependencies ++= Seq(
     "org.typelevel" %% "cats-core" % "1.0.1",
     "org.scalatest" %% "scalatest" % "3.0.4" % "test",
+    "com.github.julien-truffaut" %%  "monocle-core"  % monocleVersion % "test",
+    "com.github.julien-truffaut" %%  "monocle-macro" % monocleVersion % "test",
     "ch.qos.logback" % "logback-classic" % "1.2.3",
     "com.typesafe.scala-logging" %% "scala-logging" % "3.8.0"
   )
@@ -28,26 +32,26 @@ def withDeps(p: Project)(dep: Project*): Project
 lazy val core = (project in file("core"))
   .settings(
     commonSettings,
-  ).settings(moduleName := "core")
+  ).settings(moduleName := "servicebox-core")
 
 lazy val coreIO = withDeps((project in file("core-io"))
   .settings(
-  moduleName := "core-io",
+    commonSettings ++ Seq(
+  moduleName := "servicebox-core-io",
     libraryDependencies ++= Seq(
       "org.typelevel" %% "cats-effect" % "0.10"
-    )
-  ))(core)
+  ))))(core)
 
 lazy val docker = withDeps((project in file("docker"))
   .settings(commonSettings ++ Seq(
-    moduleName := "docker",
+    moduleName := "servicebox-docker",
     libraryDependencies ++= Seq(
       "com.spotify" % "docker-client" % "8.10.0"
     )
   )))(core)
 
 lazy val dockerIO = withDeps((project in file("docker-io"))
-  .settings( moduleName := "docker-io"))(core, coreIO, docker)
+  .settings(commonSettings ++ Seq(moduleName := "servicebox-docker-io")))(core, coreIO, docker)
 
 lazy val root = (project in file("."))
   .aggregate(core, coreIO, docker, dockerIO)

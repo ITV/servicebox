@@ -18,6 +18,10 @@ import com.itv.servicebox.algebra.ServiceRegistry.{ContainerMappings, Location}
 
 import scala.util.Try
 
+object InMemoryServiceRegistry {
+  val DefaultPortRange = 49162 to 49262
+}
+
 class InMemoryServiceRegistry[F[_]](range: Range, logger: Logger[F])(implicit tag: AppTag,
                                                                      I: ImpureEffect[F],
                                                                      M: MonadError[F, Throwable])

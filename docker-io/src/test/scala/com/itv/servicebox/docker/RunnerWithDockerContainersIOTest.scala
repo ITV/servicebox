@@ -20,7 +20,7 @@ class RunnerWithDockerContainersIOTest extends RunnerTest[IO] with BeforeAndAfte
 
   def containerController = {
     import TestData.appTag
-    new DockerContainerController(dockerClient, imageRegistry, logger)
+    new DockerContainerController(dockerClient, logger)
   }
 
   override def dependencies(implicit tag: AppTag): Dependencies[IO] =

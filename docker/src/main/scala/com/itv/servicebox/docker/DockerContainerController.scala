@@ -22,11 +22,11 @@ object DockerContainerController {
   private[docker] val ServiceRefLabel   = "com.itv.servicebox.service-ref"
   private[docker] val ContainerRefLabel = "com.itv.servicebox.container-ref"
 }
-class DockerContainerController[F[_]](
-    dockerClient: DefaultDockerClient,
-    imageRegistry: ImageRegistry[F],
-    logger: Logger[F])(implicit I: ImpureEffect[F], M: MonadError[F, Throwable], tag: AppTag)
-    extends algebra.ContainerController[F](imageRegistry, logger) {
+
+class DockerContainerController[F[_]](dockerClient: DefaultDockerClient, logger: Logger[F])(implicit I: ImpureEffect[F],
+                                                                                            M: MonadError[F, Throwable],
+                                                                                            tag: AppTag)
+    extends algebra.ContainerController[F](new DockerImageRegistry[F](dockerClient, logger), logger) {
   import DockerContainerController._
 
   override def containerGroups(service: Service.Registered[F]) =

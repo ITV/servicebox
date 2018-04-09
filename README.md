@@ -14,9 +14,9 @@ Scala's strong type system, when used properly, can help avoiding a range of obv
 (e.g. null pointer exceptions), often removing the need for pedantic, low-level unit testing. 
 However, we still find highly valuable testing the integration of several software 
 components. It is in fact at this level that we spot most bugs (e.g. serialisation/deserialisation, 
-missing configuration values, SQL queries working differently cross vendors, race conditions, etc.).
+missing configuration values, SQL queries working differently across vendors, race conditions, etc.).
 
-Over the last years, we have started using Docker to streamline the way we run this type of tests, both on
+Recently, we have started using Docker to streamline the way we run this type of tests, both on
 our development machines and on our continuous integration environment. 
 By allowing us to reproduce a realistic production environment with great flexibility and speed, containers
 are helping us increase our confidence in our testing and continuous delivery process.
@@ -25,10 +25,10 @@ are helping us increase our confidence in our testing and continuous delivery pr
 
 The library currently consists of the following modules:
 
-- An algebra to define test dependencies (aka `Service`) as aggregates of one or several `Container`.
+- An "algebra" to define test dependencies (aka `Service`) as aggregates of one or several `Container`.
 - An `InMemoryServiceRegistry` that can automatically assign available host ports to a service containers.
 - A `Scheduler`, which provides a simple interface suitable to repeatedly check if a service is ready
-- Interpreters to setup/check/teardown services using Docker as container technology, and `scala.concurrent.Future` or `cats.effect.IO`
+- "Interpreters" to setup/check/teardown services using Docker as container technology, and `scala.concurrent.Future` or `cats.effect.IO`
 as the effect system.
 
 ![Component diagram](docs/modules.png)

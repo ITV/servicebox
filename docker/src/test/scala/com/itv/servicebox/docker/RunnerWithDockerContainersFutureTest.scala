@@ -24,7 +24,7 @@ class RunnerWithDockerContainersFutureTest extends RunnerTest[Future] with Befor
   val containerController = {
     //TODO: this is nasty! fix appTag..
     import TestData.appTag
-    new DockerContainerController(dockerClient, imageRegistry, logger)
+    new DockerContainerController(dockerClient, logger)
   }
 
   override def dependencies(implicit tag: AppTag): Dependencies[Future] =
