@@ -35,6 +35,6 @@ as the effect system.
 
 ## Modules
 
-- `core`: the core algebra, with only support for `scala.concurrent.Future`.
+- `core`: the core algebra, with built-in support for `scala.concurrent.Future`.
 - `core-io`: optional support for `cats.effect.IO`
 - `docker`: a docker interpreter for the core algebra.

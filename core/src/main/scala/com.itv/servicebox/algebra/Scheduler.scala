@@ -30,8 +30,7 @@ object Scheduler {
                       if (!promise.isCompleted)
                         promise.success(a)
                     case scala.util.Failure(err) =>
-                      ()
-                      logger.warn(s"promise already fulfilled: $err") //TODO: log something
+                      logger.warn(s"promise already fulfilled: $err")
                   }
               },
               0L,
