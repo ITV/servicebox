@@ -62,12 +62,20 @@ lazy val commonSettings = Seq(
   developers := List(Developer("afiore", "Andrea Fiore", "andrea.fiore@itv.com", url("https://github.com/afiore"))),
   licenses += ("ITV Open Source Software Licence", url("http://itv.com/itv-oss-licence-v1.0")),
   publishMavenStyle := true,
-  publishTo := Some(
-  if (isSnapshot.value)
-    Opts.resolver.sonatypeSnapshots
-  else
-    Opts.resolver.sonatypeStaging
-))
+
+  credentials ++= (for {
+    username <- Option(System.getenv().get("SONATYPE_USER"))
+    password <- Option(System.getenv().get("SONATYPE_PASS"))
+  } yield Credentials("Sonatype Nexus Repository Manager", "oss.sonatype.org", username, password)).toSeq,
+
+  publishTo := {
+    val nexus = "https://oss.sonatype.org/"
+    if (isSnapshot.value)
+      Some("snapshots" at nexus + "content/repositories/snapshots")
+    else
+      Some("releases" at nexus + "service/local/staging/deploy/maven2")
+  }
+)
 
 def withDeps(p: Project)(dep: Project*): Project
   = p.dependsOn(dep.map(_ % "compile->compile;test->test"): _*)
@@ -93,9 +101,11 @@ lazy val docker = withDeps((project in file("docker"))
     )
   )))(core)
 
+
+
 lazy val dockerIO = withDeps((project in file("docker-io"))
   .settings(commonSettings ++ Seq(moduleName := "servicebox-docker-io")))(core, coreIO, docker)
 
 lazy val root = (project in file("."))
   .aggregate(core, coreIO, docker, dockerIO)
-  .settings(publishArtifact := false)
+  .settings(skip in publish := true)
