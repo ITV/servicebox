@@ -8,7 +8,6 @@ val monocleVersion = "1.5.0"
 lazy val commonSettings = Seq(
   organization := "com.itv",
   name := "servicebox",
-  version := "0.1.0-SNAPSHOT",
   scalaVersion := "2.12.5",
   scalacOptions ++= Seq(
     "-target:jvm-1.8",
