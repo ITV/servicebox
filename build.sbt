@@ -1,3 +1,8 @@
+import sbt.Attributed
+import sbt.Keys.publishArtifact
+import ReleaseTransformations._
+import com.typesafe.sbt.pgp.PgpKeys.{publishSigned, publishLocalSigned}
+
 val monocleVersion = "1.5.0"
 
 lazy val commonSettings = Seq(
@@ -23,8 +28,46 @@ lazy val commonSettings = Seq(
     "com.github.julien-truffaut" %%  "monocle-macro" % monocleVersion % "test",
     "ch.qos.logback" % "logback-classic" % "1.2.3",
     "com.typesafe.scala-logging" %% "scala-logging" % "3.8.0"
-  )
-)
+  ),
+
+  releaseProcess := Seq[ReleaseStep](
+    checkSnapshotDependencies,
+    inquireVersions,
+    runClean,
+    runTest,
+    setReleaseVersion,
+    commitReleaseVersion,
+    tagRelease,
+    setNextVersion,
+    commitNextVersion,
+    pushChanges
+  ),
+
+  releaseCrossBuild := true,
+  publishMavenStyle := true,
+  publishArtifact in Test := false,
+  pomIncludeRepository := { _ =>
+    false
+  },
+
+  releasePublishArtifactsAction := PgpKeys.publishSigned.value,
+
+  pgpPublicRing := file("./ci/public.asc"),
+  pgpSecretRing := file("./ci/private.asc"),
+  pgpSigningKey := Some(-5373332187933973712L),
+  pgpPassphrase := Option(System.getenv("GPG_KEY_PASSPHRASE")).map(_.toArray),
+
+  homepage := Some(url("https://github.com/itv/servicebox")),
+  scmInfo := Some(ScmInfo(url("https://github.com/itv/servicebox"), "git@github.com:itv/servicebox.git")),
+  developers := List(Developer("afiore", "Andrea Fiore", "andrea.fiore@itv.com", url("https://github.com/afiore"))),
+  licenses += ("ITV Open Source Software Licence", url("http://itv.com/itv-oss-licence-v1.0")),
+  publishMavenStyle := true,
+  publishTo := Some(
+  if (isSnapshot.value)
+    Opts.resolver.sonatypeSnapshots
+  else
+    Opts.resolver.sonatypeStaging
+))
 
 def withDeps(p: Project)(dep: Project*): Project
   = p.dependsOn(dep.map(_ % "compile->compile;test->test"): _*)
@@ -55,3 +98,4 @@ lazy val dockerIO = withDeps((project in file("docker-io"))
 
 lazy val root = (project in file("."))
   .aggregate(core, coreIO, docker, dockerIO)
+  .settings(publishArtifact := false)
