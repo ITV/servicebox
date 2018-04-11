@@ -3,6 +3,8 @@ project/target
 target
 .ensime
 .ensime_cache/
+ci/private.asc
+.ruby-version
 project/ensime.sbt
 *.bk
 

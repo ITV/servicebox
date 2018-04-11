@@ -34,7 +34,6 @@ lazy val commonSettings = Seq(
     checkSnapshotDependencies,
     inquireVersions,
     runClean,
-    runTest,
     setReleaseVersion,
     commitReleaseVersion,
     tagRelease,
@@ -102,10 +101,9 @@ lazy val docker = withDeps((project in file("docker"))
   )))(core)
 
 
-
 lazy val dockerIO = withDeps((project in file("docker-io"))
   .settings(commonSettings ++ Seq(moduleName := "servicebox-docker-io")))(core, coreIO, docker)
 
 lazy val root = (project in file("."))
   .aggregate(core, coreIO, docker, dockerIO)
-  .settings(skip in publish := true)
+  .settings(commonSettings ++ Seq(skip in publish := true, publishArtifact := false))
