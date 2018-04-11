@@ -37,6 +37,7 @@ lazy val commonSettings = Seq(
     setReleaseVersion,
     commitReleaseVersion,
     tagRelease,
+    releaseStepCommandAndRemaining("publish"),
     setNextVersion,
     commitNextVersion,
     pushChanges
@@ -106,4 +107,4 @@ lazy val dockerIO = withDeps((project in file("docker-io"))
 
 lazy val root = (project in file("."))
   .aggregate(core, coreIO, docker, dockerIO)
-  .settings(commonSettings ++ Seq(skip in publish := true, publishArtifact := false))
+  .settings(commonSettings)
