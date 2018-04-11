@@ -36,7 +36,6 @@ lazy val commonSettings = Seq(
     setReleaseVersion,
     commitReleaseVersion,
     tagRelease,
-    releaseStepCommandAndRemaining("publish"),
     setNextVersion,
     commitNextVersion,
     pushChanges
