@@ -1,11 +1,14 @@
-import sbt.Attributed
 import sbt.Keys.publishArtifact
 import ReleaseTransformations._
-import com.typesafe.sbt.pgp.PgpKeys.{publishSigned, publishLocalSigned}
 
 val monocleVersion = "1.5.0"
 
-lazy val commonSettings = Seq(
+val readme     = "README.md"
+val readmePath = file(".") / readme
+val copyReadme =
+  taskKey[File](s"Copy readme file to project root")
+
+val baseSettings = Seq(
   organization := "com.itv",
   name := "servicebox",
   scalaVersion := "2.12.5",
@@ -27,8 +30,9 @@ lazy val commonSettings = Seq(
     "com.github.julien-truffaut" %%  "monocle-macro" % monocleVersion % "test",
     "ch.qos.logback" % "logback-classic" % "1.2.3",
     "com.typesafe.scala-logging" %% "scala-logging" % "3.8.0"
-  ),
+  ))
 
+val artefactSettings = baseSettings ++ Seq(
   releaseProcess := Seq[ReleaseStep](
     checkSnapshotDependencies,
     inquireVersions,
@@ -80,29 +84,51 @@ def withDeps(p: Project)(dep: Project*): Project
 
 lazy val core = (project in file("core"))
   .settings(
-    commonSettings,
-  ).settings(moduleName := "servicebox-core")
+    artefactSettings,
+  ).settings(
+  moduleName := "servicebox-core"
+)
 
 lazy val coreIO = withDeps((project in file("core-io"))
   .settings(
-    commonSettings ++ Seq(
-  moduleName := "servicebox-core-io",
-    libraryDependencies ++= Seq(
+    artefactSettings ++ Seq(
+      moduleName := "servicebox-core-io",
+      libraryDependencies ++= Seq(
       "org.typelevel" %% "cats-effect" % "0.10"
-  ))))(core)
+     )
+    )))(core)
 
 lazy val docker = withDeps((project in file("docker"))
-  .settings(commonSettings ++ Seq(
+  .settings(artefactSettings ++ Seq(
     moduleName := "servicebox-docker",
     libraryDependencies ++= Seq(
       "com.spotify" % "docker-client" % "8.10.0"
     )
   )))(core)
 
-
 lazy val dockerIO = withDeps((project in file("docker-io"))
-  .settings(commonSettings ++ Seq(moduleName := "servicebox-docker-io")))(core, coreIO, docker)
+  .enablePlugins(TutPlugin)
+  .settings(artefactSettings ++ Seq(
+    moduleName := "servicebox-docker-io",
+    copyReadme := {
+      val _      = (tut in Compile).value
+      val tutDir = tutTargetDirectory.value
+      val log    = streams.value.log
+
+      log.info(s"Copying ${tutDir / readme} to ${file(".") / readme}")
+
+      IO.copyFile(
+        tutDir / readme,
+        readmePath
+      )
+      readmePath
+    })
+  ))(core, coreIO, docker)
+
+lazy val example = (project in file("example"))
+  .dependsOn(core, coreIO, docker, dockerIO)
+  .settings(baseSettings)
 
 lazy val root = (project in file("."))
   .aggregate(core, coreIO, docker, dockerIO)
-  .settings(commonSettings)
+  .settings(artefactSettings)

@@ -37,7 +37,7 @@ libraryDependencies ++= Seq(
 
 To start with, you must specify your service dependencies as follows:
 
-```scala
+```tut:silent
 import cats.effect.IO
 import scala.concurrent.duration._
 import cats.data.NonEmptyList
@@ -49,6 +49,7 @@ import ServiceRegistry.Endpoints
 object Postgres {
   case class DbConfig(host: String, dbName: String, password: String, port: Int)
   
+  //TODO: implement actual check...
   def pingDb(value: DbConfig): IO[Unit] = IO.unit
 
   def apply(config: DbConfig): Service.Spec[IO] = {
@@ -76,40 +77,35 @@ which will be called repeatedly until it returns successfully (in the case of sc
 
 Once defined, one or several service specs might be executed through a `Runner`:
 
-```scala
-scala> import scala.concurrent.ExecutionContext.Implicits.global
+```tut
 import scala.concurrent.ExecutionContext.Implicits.global
 
-scala> implicit val tag: AppTag = AppTag("com.example", "some-app")
-tag: com.itv.servicebox.algebra.AppTag = AppTag(com.example,some-app)
+implicit val tag: AppTag = AppTag("com.example", "some-app")
 
-scala> lazy val runner = {
-     |   val config = Postgres.DbConfig("localhost", "user", "pass", 5432)
-     |   val instance = docker.runner()(Postgres(config))
-     |   sys.addShutdownHook {
-     |     instance.tearDown.unsafeRunSync()
-     |   }
-     |   instance
-     | }
-runner: com.itv.servicebox.algebra.Runner[cats.effect.IO] = <lazy>
+lazy val runner = {
+  val config = Postgres.DbConfig("localhost", "user", "pass", 5432)
+  val instance = docker.runner()(Postgres(config))
+  sys.addShutdownHook {
+    instance.tearDown.unsafeRunSync()
+  }
+  instance
+}
+
 ```
 
 Together with a `tearDown`, the runner also exposes a `setUp` method:
 
-```scala
-scala> val registered = runner.setUp.unsafeRunSync
-registered: List[com.itv.servicebox.algebra.Service.Registered[cats.effect.IO]] = List(Registered(Postgres,NonEmptyList(Registered(Ref(com.example/some-app/Postgres/postgres:9.5.4),postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),Set((49162,5432)))),NonEmptyList(Location(127.0.0.1,49162)),ReadyCheck(Postgres$$$Lambda$8242/1347801271@274c97ac,50 milliseconds,1 minute,None)))
+```tut
+val registered = runner.setUp.unsafeRunSync
 ```
 
 This will return a list of `Service.Registered[F[_]]`. This type describes
 a running service complete of the host/port details needed to interact with it:
 
-```scala
-scala> import cats.syntax.show._
+```tut
 import cats.syntax.show._
 
-scala> registered.map(s => s.ref.show -> s.endpoints)
-res0: List[(String, com.itv.servicebox.algebra.ServiceRegistry.Endpoints)] = List((com.example/some-app/Postgres,NonEmptyList(Location(127.0.0.1,49162))))
+registered.map(s => s.ref.show -> s.endpoints)
 ```
 
 In this example, we use `InMemoryServiceRegistry[F[_]]` to automatically bind
@@ -132,4 +128,3 @@ as the effect system.
 - `core`: the core algebra, with built-in support for `scala.concurrent.Future`.
 - `core-io`: optional support for `cats.effect.IO`
 - `docker`: a docker interpreter for the core algebra.
-
