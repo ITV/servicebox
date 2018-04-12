@@ -49,7 +49,8 @@ import ServiceRegistry.Endpoints
 object Postgres {
   case class DbConfig(host: String, dbName: String, password: String, port: Int)
   
-  //TODO: implement actual check...
+  //NOTE: This is left unimplemented. The check will be re-attempted if an exception
+  //is thrown (either directly, or via `IO.raiseError(new Exception(...))` 
   def pingDb(value: DbConfig): IO[Unit] = IO.unit
 
   def apply(config: DbConfig): Service.Spec[IO] = {

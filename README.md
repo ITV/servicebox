@@ -49,6 +49,8 @@ import ServiceRegistry.Endpoints
 object Postgres {
   case class DbConfig(host: String, dbName: String, password: String, port: Int)
   
+  //NOTE: This is left unimplemented. The check will be re-attempted if an exception
+  //is thrown (either directly, or via `IO.raiseError(new Exception(...))` 
   def pingDb(value: DbConfig): IO[Unit] = IO.unit
 
   def apply(config: DbConfig): Service.Spec[IO] = {
@@ -98,7 +100,7 @@ Together with a `tearDown`, the runner also exposes a `setUp` method:
 
 ```scala
 scala> val registered = runner.setUp.unsafeRunSync
-registered: List[com.itv.servicebox.algebra.Service.Registered[cats.effect.IO]] = List(Registered(Postgres,NonEmptyList(Registered(Ref(com.example/some-app/Postgres/postgres:9.5.4),postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),Set((49162,5432)))),NonEmptyList(Location(127.0.0.1,49162)),ReadyCheck(Postgres$$$Lambda$8242/1347801271@274c97ac,50 milliseconds,1 minute,None)))
+registered: List[com.itv.servicebox.algebra.Service.Registered[cats.effect.IO]] = List(Registered(Postgres,NonEmptyList(Registered(Ref(com.example/some-app/Postgres/postgres:9.5.4),postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),Set((49162,5432)))),NonEmptyList(Location(127.0.0.1,49162)),ReadyCheck(Postgres$$$Lambda$8524/1295451211@3649743a,50 milliseconds,1 minute,None)))
 ```
 
 This will return a list of `Service.Registered[F[_]]`. This type describes
@@ -132,4 +134,3 @@ as the effect system.
 - `core`: the core algebra, with built-in support for `scala.concurrent.Future`.
 - `core-io`: optional support for `cats.effect.IO`
 - `docker`: a docker interpreter for the core algebra.
-
