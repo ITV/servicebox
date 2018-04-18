@@ -41,24 +41,38 @@ To start with, you must specify your service dependencies as follows:
 import cats.effect.IO
 import scala.concurrent.duration._
 import cats.data.NonEmptyList
+
 import com.itv.servicebox.algebra._
 import com.itv.servicebox.interpreter._
 import com.itv.servicebox.docker
 import ServiceRegistry.Endpoints
 
+import doobie._
+import doobie.implicits._
+
 object Postgres {
   case class DbConfig(host: String, dbName: String, password: String, port: Int)
   
-  //NOTE: This is left unimplemented. The check will be re-attempted if an exception
-  //is thrown (either directly, or via `IO.raiseError(new Exception(...))` 
-  def pingDb(value: DbConfig): IO[Unit] = IO.unit
+  val xa = Transactor.fromDriverManager[IO](
+    "org.postgresql.Driver", 
+    "jdbc:postgresql:world",
+    "postgres",
+    "" 
+  )
+  
+  def pingDb(value: DbConfig): IO[Unit] = IO {
+    val check = sql"select 1".query[Unit].unique
+    check.transact(xa)
+  }
 
   def apply(config: DbConfig): Service.Spec[IO] = {
 
     def dbConnect(endpoints: Endpoints): IO[Unit] =
       for {
-        _ <- IOLogger.info("Attempting to connect to DB")
-        _ <- pingDb(config.copy(host = endpoints.head.host, port = endpoints.head.port))
+        _ <- IOLogger.info("Attempting to connect to DB ...")
+        serviceConfig = config.copy(host = endpoints.head.host, port = endpoints.head.port)
+        _ <- pingDb(serviceConfig)
+        _ <- IOLogger.info("... connected")
       } yield ()
 
     Service.Spec[IO](
@@ -67,7 +81,7 @@ object Postgres {
         Container.Spec("postgres:9.5.4",
                        Map("POSTGRES_DB" -> config.dbName, "POSTGRES_PASSWORD" -> config.password),
                        Set(5432))),
-      Service.ReadyCheck[IO](dbConnect, 50.millis, 1.minute)
+      Service.ReadyCheck[IO](dbConnect, 50.millis, 10.seconds)
     )
   }
 }

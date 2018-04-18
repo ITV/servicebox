@@ -2,6 +2,7 @@ import sbt.Keys.publishArtifact
 import ReleaseTransformations._
 
 val monocleVersion = "1.5.0"
+val doobieVersion = "0.5.2"
 
 val readme     = "README.md"
 val readmePath = file(".") / readme
@@ -24,7 +25,7 @@ val baseSettings = Seq(
     "-Xmax-classfile-name","100"
   ),
   libraryDependencies ++= Seq(
-    "org.typelevel" %% "cats-core" % "1.0.1",
+    "org.typelevel" %% "cats-core" % "1.1.0",
     "org.scalatest" %% "scalatest" % "3.0.4" % "test",
     "com.github.julien-truffaut" %%  "monocle-core"  % monocleVersion % "test",
     "com.github.julien-truffaut" %%  "monocle-macro" % monocleVersion % "test",
@@ -107,10 +108,19 @@ lazy val docker = withDeps((project in file("docker"))
   )))(core)
 
 lazy val dockerIO = withDeps((project in file("docker-io"))
-  .enablePlugins(TutPlugin)
   .settings(artefactSettings ++ Seq(
-    moduleName := "servicebox-docker-io",
-    copyReadme := {
+    moduleName := "servicebox-docker-io"
+  )))(core, coreIO, docker)
+
+lazy val example = withDeps((project in file("example"))
+  .enablePlugins(TutPlugin)
+  .settings(baseSettings ++ Seq(
+      libraryDependencies ++= Seq(
+        "org.flywaydb" % "flyway-core"      % "4.2.0",
+        "org.tpolecat" %% "doobie-core"     % doobieVersion,
+        "org.tpolecat" %% "doobie-postgres" % doobieVersion
+      ),
+      copyReadme := {
       val _      = (tut in Compile).value
       val tutDir = tutTargetDirectory.value
       val log    = streams.value.log
@@ -122,12 +132,7 @@ lazy val dockerIO = withDeps((project in file("docker-io"))
         readmePath
       )
       readmePath
-    })
-  ))(core, coreIO, docker)
-
-lazy val example = (project in file("example"))
-  .dependsOn(core, coreIO, docker, dockerIO)
-  .settings(baseSettings)
+    })))(core, coreIO, docker, dockerIO)
 
 lazy val root = (project in file("."))
   .aggregate(core, coreIO, docker, dockerIO)
