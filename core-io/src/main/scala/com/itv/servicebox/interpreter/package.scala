@@ -31,8 +31,8 @@ package object interpreter {
             IO.raiseError(new TimeoutException(s"Ready check timed out for $label after $timeout"))
           else IO.unit
           currentTime <- getRealTime
-          _           <- logger.debug(s"running ready-check for $label ...")
-          reAttempt = elapsedTime(currentTime) flatMap (interval => attemptAction(timeTaken + interval))
+          _           <- logger.debug(s"running ready-check for $label [currentTime: ${currentTime}]...")
+          reAttempt = logger.debug(s"interval: $interval: total time taken so far (ms): ${timeTaken + interval.toMillis}") >> attemptAction(timeTaken + interval.toMillis)
           result <- IO.race(f().attempt, timer.sleep(interval))
           outcome <- result.fold(
             _.fold(err => logger.warn(s"Ready check failed for $label: $err...") >> reAttempt, IO.pure),

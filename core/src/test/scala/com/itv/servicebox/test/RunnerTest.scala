@@ -185,10 +185,11 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
 
     "raises an error if a service ready-check times out" in {
       val testData = TestData.default[F]
+      val counter  = new AtomicInteger(0)
       val rabbitSpec = TestData
         .rabbitSpec[F]
         .copy(
-          readyCheck = ReadyCheck(_ => M.raiseError[Unit](new IllegalStateException(s"Cannot access test service")),
+          readyCheck = ReadyCheck(_ => I.lift(counter.getAndIncrement()) >> M.raiseError[Unit](new IllegalStateException(s"Cannot access test service")),
                                   10.millis,
                                   30.millis))
 
@@ -198,6 +199,8 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
         }.attempt)
         .left
         .get shouldBe a[TimeoutException]
+
+      counter.get() should ===(4)
     }
 
     "recovers from errors when ready-checks eventually succeed" in {
@@ -210,7 +213,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
             M.raiseError[Unit](new IllegalStateException(s"Cannot access test service"))
           else
             M.pure(())
-        }, 10.millis, 1.second))
+        }, 10.millis, 100.millis))
 
       runServices(testData.copy(services = List(rabbitSpec))) { (_, serviceRegistry, deps) =>
         for {
@@ -219,6 +222,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
         } yield {
           service.toSpec should ===(rabbitSpec)
           runningContainers should have size 1
+          counter.get() should ===(4)
         }
       }
     }
