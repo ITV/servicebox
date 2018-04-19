@@ -20,7 +20,6 @@ class KVStoreTest extends FlatSpec with Matchers with BeforeAndAfterAll {
   private lazy val runnerAndConfig: (Runner[IO], DbConfig) = {
     val baseConfig = DbConfig("localhost", 5432, "kvstore", "postgres", "")
 
-
     def dbConnect(endpoints: Endpoints): IO[Unit] =
       for {
         _ <- IOLogger.info("Attempting to connect to DB ...")
@@ -42,10 +41,6 @@ class KVStoreTest extends FlatSpec with Matchers with BeforeAndAfterAll {
     )
 
     val runner = docker.runner()(postgres)
-
-//    sys.addShutdownHook {
-//      runner.tearDown.unsafeRunSync()
-//    }
     val endpoints = runner.setUp.unsafeRunSync().head.endpoints
     val config = baseConfig.copy(host = endpoints.head.host, port = endpoints.head.port)
     (runner, config)
@@ -66,7 +61,7 @@ class KVStoreTest extends FlatSpec with Matchers with BeforeAndAfterAll {
     setTwiceAndGet.unsafeRunSync() should ===(Some("baz"))
   }
 
-
+  // This is an alternative approach to the shutdown hook documented in the README
   override def afterAll() = {
     serviceRunner.tearDown.unsafeRunSync()
   }
