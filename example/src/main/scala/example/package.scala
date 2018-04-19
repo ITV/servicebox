@@ -13,9 +13,9 @@ package object example {
   private def transactor(config: DbConfig): Transactor[IO] = Transactor.fromDriverManager[IO](
     "org.postgresql.Driver", config.toJdbcUrl, config.user, config.password
   )
+
   private def runMigrations(config: DbConfig) = IO {
     val flyway = new Flyway()
-    println(s"connecting: ${config.toJdbcUrl} with ${config.user} and ${config.password}")
     flyway.setDataSource(config.toJdbcUrl, config.user, config.password)
     flyway.migrate()
   }

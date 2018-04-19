@@ -67,6 +67,7 @@ object Postgres {
 
   def apply(config: DbConfig): Service.Spec[IO] = {
 
+    // this will be re-attempted if an error is raised when running the query
     def dbConnect(endpoints: Endpoints): IO[Unit] =
       for {
         _ <- IOLogger.info("Attempting to connect to DB ...")
@@ -88,7 +89,7 @@ object Postgres {
 ```
 
 A `Service.Spec[F[_]]` consists of one or more container descriptions, together with a `ReadyCheck`: an effectfull function
-which will be called repeatedly until it returns successfully (in the case of scala.concurrent.Future, until the future completes with a success).
+which will be called repeatedly (i.e. every 50 millis) until it returns successfully or it times out.
 
 Once defined, one or several service specs might be executed through a `Runner`:
 
@@ -110,15 +111,16 @@ scala> lazy val runner = {
 runner: com.itv.servicebox.algebra.Runner[cats.effect.IO] = <lazy>
 ```
 
-Together with a `tearDown`, the runner also exposes a `setUp` method:
+The service `Runner` exposes two main methods: a `tearDown`, which will kill all the containers
+defined in the spec, and a `setUp`:
 
 ```scala
 scala> val registered = runner.setUp.unsafeRunSync
-registered: List[com.itv.servicebox.algebra.Service.Registered[cats.effect.IO]] = List(Registered(Postgres,NonEmptyList(Registered(Ref(com.example/some-app/Postgres/postgres:9.5.4),postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),Set((49162,5432)))),NonEmptyList(Location(127.0.0.1,49162)),ReadyCheck(Postgres$$$Lambda$6000/1871544680@61a64d3d,50 milliseconds,10 seconds,None)))
+registered: List[com.itv.servicebox.algebra.Service.Registered[cats.effect.IO]] = List(Registered(Postgres,NonEmptyList(Registered(Ref(com.example/some-app/Postgres/postgres:9.5.4),postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),Set((49162,5432)))),NonEmptyList(Location(127.0.0.1,49162)),ReadyCheck(Postgres$$$Lambda$6129/1625766714@32f99460,50 milliseconds,10 seconds,None)))
 ```
 
-This will return a list of `Service.Registered[F[_]]`. This type describes
-a running service complete of the host/port details needed to interact with it:
+This will return a list of `Service.Registered[F[_]]`: a representation of
+a running service and its `Endpoints` (i.e. the host/port details needed to interact with it).
 
 ```scala
 scala> import cats.syntax.show._
@@ -128,8 +130,14 @@ scala> registered.map(s => s.ref.show -> s.endpoints)
 res0: List[(String, com.itv.servicebox.algebra.ServiceRegistry.Endpoints)] = List((com.example/some-app/Postgres,NonEmptyList(Location(127.0.0.1,49162))))
 ```
 
-In this example, we use `InMemoryServiceRegistry[F[_]]` to automatically bind
-an available host port to the Postgres container port `5432`.
+Notice that, while in the `Postgres` spec we define a container port, the library will automatically assign 
+an available host port and expose it in the running service endpoints (see `InMemoryServiceRegistry` for details).
+
+## Detailed example
+
+Please refer to the [example](example) subproject for a working example of how to integrate the library
+with `scalatest`.
+
 
 ## Key components
 
