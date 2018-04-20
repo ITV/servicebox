@@ -15,7 +15,7 @@ package object test {
     implicit val appTag = AppTag("org", "test")
 
     def constantReady[F[_]](label: String)(implicit A: Applicative[F]): Service.ReadyCheck[F] =
-      Service.ReadyCheck[F](_ => A.unit, 2.millis, 3.millis)
+      Service.ReadyCheck[F](_ => A.unit, 5.millis, 1.second)
 
     def postgresSpec[F[_]: Applicative] = Service.Spec[F](
       "db",
