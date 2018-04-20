@@ -1,6 +1,8 @@
 package com.itv.servicebox
 
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.{TimeUnit, TimeoutException}
+import java.util.function.LongUnaryOperator
 
 import cats.effect.{IO, Timer}
 import cats.syntax.flatMap._
@@ -18,28 +20,32 @@ package object interpreter {
   }
 
   implicit def ioScheduler(implicit logger: Logger[IO]): Scheduler[IO] = new Scheduler[IO](logger) {
-    override def retry[A](f: () => IO[A], interval: FiniteDuration, timeout: FiniteDuration, label: String)(
+    override def retry[A](f: () => IO[A], checkTimeout: FiniteDuration, totalTimeout: FiniteDuration, label: String)(
         implicit ec: ExecutionContext): IO[A] = {
 
-      val timer                        = implicitly[Timer[IO]]
-      def getRealTime                  = timer.clockMonotonic(TimeUnit.MILLISECONDS)
+      //TODO: move to signature
+      val timer = implicitly[Timer[IO]]
+      val timeTaken = new AtomicLong(0L)
+      val incrementTimeTaken = new LongUnaryOperator() {
+        override def applyAsLong(time: Long) = time + checkTimeout.toMillis
+      }
 
-      def attemptAction(timeTaken: Long): IO[A] =
+      def attemptAction: IO[A] =
         for {
-          _ <- if (timeTaken > timeout.toMillis)
-            IO.raiseError(new TimeoutException(s"Ready check timed out for $label after $timeout"))
+          elapsedSoFar <- IO(timeTaken.get())
+          _ <- if (elapsedSoFar > totalTimeout.toMillis)
+            IO.raiseError(new TimeoutException(s"Ready check timed out for $label after $totalTimeout"))
           else IO.unit
-          currentTime <- getRealTime
-          _           <- logger.debug(s"running ready-check for $label [currentTime: ${currentTime}]...")
-          reAttempt = logger.debug(s"interval: $interval: total time taken so far (ms): ${timeTaken + interval.toMillis}") >> attemptAction(timeTaken + interval.toMillis)
-          result <- IO.race(f().attempt, timer.sleep(interval))
+          _           <- logger.debug(s"running ready-check for $label [time taken so far: $elapsedSoFar ms, check timeout: ${checkTimeout.toMillis} ms, total timeout: ${totalTimeout.toMillis} ms]")
+          result <- IO.race(f().attempt, timer.sleep(checkTimeout))
+          _ <- IO(timeTaken.updateAndGet(incrementTimeTaken))
           outcome <- result.fold(
-            _.fold(err => logger.warn(s"Ready check failed for $label: $err...") >> reAttempt, IO.pure),
-            _ => logger.debug(s"interval timed out after after $interval") >> reAttempt
+            _.fold(err => logger.warn(s"Ready check failed for $label: $err...") >> attemptAction, IO.pure),
+            _ => logger.debug(s"ready-check attempt timed out after after $checkTimeout") >> attemptAction
           )
         } yield outcome
 
-      attemptAction(0L)
+      attemptAction
     }
   }
 }
