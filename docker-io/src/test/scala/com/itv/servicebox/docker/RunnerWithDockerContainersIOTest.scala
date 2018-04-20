@@ -3,11 +3,12 @@ package com.itv.servicebox.docker
 import cats.effect.IO
 import com.itv.servicebox.algebra._
 import com.itv.servicebox.interpreter.IOLogger
-import com.itv.servicebox.test.{Dependencies, RunnerTest, TestData}
+import com.itv.servicebox.test.{Dependencies, RunnerTest, TestData, TestEnv}
 import com.spotify.docker.client.DefaultDockerClient
 import cats.syntax.flatMap._
 import org.scalatest.{Assertion, BeforeAndAfterAll}
 import com.itv.servicebox.interpreter.{ioEffect, ioScheduler}
+
 import scala.concurrent.ExecutionContext.Implicits.global
 
 class RunnerWithDockerContainersIOTest extends RunnerTest[IO] with BeforeAndAfterAll {
@@ -26,8 +27,7 @@ class RunnerWithDockerContainersIOTest extends RunnerTest[IO] with BeforeAndAfte
   override def dependencies(implicit tag: AppTag): Dependencies[IO] =
     new Dependencies(logger, imageRegistry, containerController, ioScheduler)
 
-  override def withServices(testData: TestData[IO])(
-      f: (Runner[IO], ServiceRegistry[IO], Dependencies[IO]) => IO[Assertion])(implicit tag: AppTag) =
+  override def withServices(testData: TestData[IO])(f: TestEnv[IO] => IO[Assertion])(implicit tag: AppTag) =
     containerController.stopContainers >> super.withServices(testData)(f)
 
   override def afterAll =

@@ -1,7 +1,9 @@
 package com.itv.servicebox
 
+import java.util.concurrent.TimeUnit
+
 import cats.data.NonEmptyList
-import cats.{Applicative, MonadError}
+import cats.{Applicative, FlatMap, Functor, MonadError}
 import com.itv.servicebox.algebra.{ImpureEffect, InMemoryServiceRegistry, _}
 import org.scalatest.Assertion
 import org.scalatest.Matchers._
@@ -74,9 +76,12 @@ package object test {
       new Runner[F](ctrl, registry)(services: _*)
   }
 
+  case class TestEnv[F[_]](deps: Dependencies[F], serviceRegistry: ServiceRegistry[F], runner: Runner[F])(
+      implicit I: ImpureEffect[F],
+      F: Functor[F])
+
   //TODO: return list of registered services instead than registry
-  def withRunningServices[F[_]](deps: Dependencies[F])(testData: TestData[F])(
-      runAssertion: (Runner[F], ServiceRegistry[F], Dependencies[F]) => F[Assertion])(
+  def withRunningServices[F[_]](deps: Dependencies[F])(testData: TestData[F])(runAssertion: TestEnv[F] => F[Assertion])(
       implicit appTag: AppTag,
       ec: ExecutionContext,
       M: MonadError[F, Throwable],
@@ -97,6 +102,6 @@ package object test {
       testData.preExisting.foldM(())((_, c) =>
         deps.containerController.fetchImageAndStartContainer(c.serviceRef, c.container).void)
 
-    setupRunningContainers >> runner.setUp >> runAssertion(runner, serviceRegistry, deps)
+    setupRunningContainers >> runner.setUp >> runAssertion(TestEnv[F](deps, serviceRegistry, runner))
   }
 }

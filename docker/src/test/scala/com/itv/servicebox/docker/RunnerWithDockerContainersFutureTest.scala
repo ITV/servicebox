@@ -5,7 +5,7 @@ import java.util.concurrent.{Executors, ScheduledExecutorService}
 import cats.instances.future._
 import com.itv.servicebox.algebra._
 import com.itv.servicebox.interpreter.FutureLogger
-import com.itv.servicebox.test.{Dependencies, RunnerTest, TestData}
+import com.itv.servicebox.test.{Dependencies, RunnerTest, TestData, TestEnv}
 import com.spotify.docker.client.DefaultDockerClient
 import cats.syntax.flatMap._
 import org.scalatest.{Assertion, BeforeAndAfterAll}
@@ -30,8 +30,7 @@ class RunnerWithDockerContainersFutureTest extends RunnerTest[Future] with Befor
   override def dependencies(implicit tag: AppTag): Dependencies[Future] =
     new Dependencies(logger, imageRegistry, containerController, Scheduler.futureScheduler)
 
-  override def withServices(testData: TestData[Future])(
-      f: (Runner[Future], ServiceRegistry[Future], Dependencies[Future]) => Future[Assertion])(implicit tag: AppTag) =
+  override def withServices(testData: TestData[Future])(f: TestEnv[Future] => Future[Assertion])(implicit tag: AppTag) =
     containerController.stopContainers >> super.withServices(testData)(f)
 
   override def afterAll() =

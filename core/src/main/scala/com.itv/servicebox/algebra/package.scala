@@ -1,14 +1,13 @@
 package com.itv.servicebox
 
-import cats.{MonadError, Show}
+import cats.Show
 import cats.data.NonEmptyList
-import cats.syntax.show._
 import cats.syntax.either._
-import cats.syntax.monadError._
+import cats.syntax.show._
 import com.itv.servicebox.algebra.ServiceRegistry.ContainerMappings
 
-import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.duration.{Duration, FiniteDuration}
+import scala.concurrent.{Await, ExecutionContext, Future}
 
 package object algebra {
   //TODO: consider adding an organisation/team name
