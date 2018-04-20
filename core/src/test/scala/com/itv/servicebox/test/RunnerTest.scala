@@ -190,8 +190,8 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
         .rabbitSpec[F]
         .copy(
           readyCheck = ReadyCheck(_ => I.lift(counter.getAndIncrement()) >> M.raiseError[Unit](new IllegalStateException(s"Cannot access test service")),
-                                  10.millis,
-                                  30.millis))
+            100.millis,
+            1.second))
 
       I.runSync(withServices(testData.copy(services = List(rabbitSpec))) {
           case _ =>
@@ -200,7 +200,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
         .left
         .get shouldBe a[TimeoutException]
 
-      counter.get() should ===(4)
+      counter.get() should ===(11 +- 10)
     }
 
     "recovers from errors when ready-checks eventually succeed" in {

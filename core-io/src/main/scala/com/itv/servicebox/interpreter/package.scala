@@ -22,8 +22,7 @@ package object interpreter {
         implicit ec: ExecutionContext): IO[A] = {
 
       val timer                        = implicitly[Timer[IO]]
-      def getRealTime                  = timer.clockRealTime(TimeUnit.MILLISECONDS)
-      def elapsedTime(startTime: Long) = getRealTime.map(_ - startTime)
+      def getRealTime                  = timer.clockMonotonic(TimeUnit.MILLISECONDS)
 
       def attemptAction(timeTaken: Long): IO[A] =
         for {
