@@ -58,6 +58,6 @@ class ServiceController[F[_]](logger: Logger[F],
   def waitUntilReady(service: Service.Registered[F])(implicit ec: ExecutionContext): F[Unit] = {
     def check = () => service.readyCheck.isReady(service.endpoints)
     val label = service.readyCheck.label.getOrElse(service.ref.show)
-    scheduler.retry(check, service.readyCheck.checkInterval, service.readyCheck.timeout, label)
+    scheduler.retry(check, service.readyCheck.attemptTimeout, service.readyCheck.totalTimeout, label)
   }
 }

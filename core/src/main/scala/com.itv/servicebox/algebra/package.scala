@@ -80,8 +80,8 @@ package object algebra {
   object Service {
 
     case class ReadyCheck[F[_]](isReady: ServiceRegistry.Endpoints => F[Unit],
-                                checkInterval: FiniteDuration,
-                                timeout: FiniteDuration,
+                                attemptTimeout: FiniteDuration,
+                                totalTimeout: FiniteDuration,
                                 label: Option[String] = None)
 
     case class Spec[F[_]](name: String, containers: NonEmptyList[Container.Spec], readyCheck: ReadyCheck[F])
