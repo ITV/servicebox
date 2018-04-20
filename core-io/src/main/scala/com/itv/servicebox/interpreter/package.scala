@@ -1,11 +1,8 @@
 package com.itv.servicebox
 
-import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.{TimeUnit, TimeoutException}
-import java.util.function.LongUnaryOperator
 
 import cats.effect.{IO, Timer}
-import cats.syntax.flatMap._
 import com.itv.servicebox.algebra._
 
 import scala.concurrent.ExecutionContext
@@ -25,27 +22,28 @@ package object interpreter {
 
       //TODO: move to signature
       val timer = implicitly[Timer[IO]]
-      val timeTaken = new AtomicLong(0L)
-      val incrementTimeTaken = new LongUnaryOperator() {
-        override def applyAsLong(time: Long) = time + checkTimeout.toMillis
-      }
+      import cats.syntax.flatMap._
 
-      def attemptAction: IO[A] =
+      def currentTimeMs = timer.clockMonotonic(TimeUnit.MILLISECONDS).map(FiniteDuration(_, TimeUnit.MILLISECONDS))
+      def lapseTime(startTime: FiniteDuration) = currentTimeMs.map(_ - startTime)
+
+      def attemptAction(startTime: FiniteDuration): IO[A] =
         for {
-          elapsedSoFar <- IO(timeTaken.get())
-          _ <- if (elapsedSoFar > totalTimeout.toMillis)
+          elapsed <- lapseTime(startTime)
+          _ <- if (elapsed > totalTimeout) {
+            logger.warn("exiting loop")
             IO.raiseError(new TimeoutException(s"Ready check timed out for $label after $totalTimeout"))
+          }
           else IO.unit
-          _           <- logger.debug(s"running ready-check for $label [time taken so far: $elapsedSoFar ms, check timeout: ${checkTimeout.toMillis} ms, total timeout: ${totalTimeout.toMillis} ms]")
-          result <- IO.race(f().attempt, timer.sleep(checkTimeout))
-          _ <- IO(timeTaken.updateAndGet(incrementTimeTaken))
+          _           <- logger.debug(s"running ready-check for $label [time taken so far: $elapsed ms, check timeout: ${checkTimeout.toMillis} ms, total timeout: ${totalTimeout.toMillis} ms]")
+          result <- IO.race(f().attempt, IO(Thread.sleep(checkTimeout.toMillis)))
           outcome <- result.fold(
-            _.fold(err => logger.warn(s"Ready check failed for $label: $err...") >> attemptAction, IO.pure),
-            _ => logger.debug(s"ready-check attempt timed out after after $checkTimeout") >> attemptAction
+            _.fold(err => logger.warn(s"Ready check failed for $label: $err...") >> attemptAction(startTime), IO.pure),
+            _ => logger.debug(s"ready-check attempt timed out after after $checkTimeout") >> attemptAction(startTime)
           )
         } yield outcome
 
-      attemptAction
+      currentTimeMs flatMap attemptAction
     }
   }
 }

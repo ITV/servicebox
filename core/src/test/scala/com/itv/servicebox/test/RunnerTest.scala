@@ -200,7 +200,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
         .left
         .get shouldBe a[TimeoutException]
 
-      counter.get() should ===(11 +- 10)
+      counter.get should be > 5
     }
 
     "recovers from errors when ready-checks eventually succeed" in {
