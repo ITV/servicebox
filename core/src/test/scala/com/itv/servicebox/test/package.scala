@@ -76,9 +76,11 @@ package object test {
       new Runner[F](ctrl, registry)(services: _*)
   }
 
-  case class TestEnv[F[_]](deps: Dependencies[F], serviceRegistry: ServiceRegistry[F], runner: Runner[F])(
-      implicit I: ImpureEffect[F],
-      F: Functor[F])
+  case class TestEnv[F[_]](
+      deps: Dependencies[F],
+      serviceRegistry: ServiceRegistry[F],
+      runner: Runner[F],
+      runtimeInfo: Map[Service.Ref, Service.RuntimeInfo])(implicit I: ImpureEffect[F], F: Functor[F])
 
   //TODO: return list of registered services instead than registry
   def withRunningServices[F[_]](deps: Dependencies[F])(testData: TestData[F])(runAssertion: TestEnv[F] => F[Assertion])(
@@ -102,6 +104,9 @@ package object test {
       testData.preExisting.foldM(())((_, c) =>
         deps.containerController.fetchImageAndStartContainer(c.serviceRef, c.container).void)
 
-    setupRunningContainers >> runner.setUp >> runAssertion(TestEnv[F](deps, serviceRegistry, runner))
+    setupRunningContainers >> runner.setupWithRuntimeInfo >>= { x =>
+      val runtimeInfo = x.map { case (registered, info) => registered.ref -> info }.toMap
+      runAssertion(TestEnv[F](deps, serviceRegistry, runner, runtimeInfo))
+    }
   }
 }

@@ -83,6 +83,8 @@ package object algebra {
                                 totalTimeout: FiniteDuration,
                                 label: Option[String] = None)
 
+    case class RuntimeInfo(setupDuration: FiniteDuration, readyCheckDuration: FiniteDuration)
+
     case class Spec[F[_]](name: String, containers: NonEmptyList[Container.Spec], readyCheck: ReadyCheck[F])
         extends Service[F, Container.Spec] {
       def register(mappings: ContainerMappings)(implicit tag: AppTag): Either[Throwable, Registered[F]] = {

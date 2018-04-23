@@ -1,6 +1,7 @@
 package com.itv.servicebox.test
 
 import java.net.{ServerSocket, Socket}
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 import cats.MonadError
@@ -29,6 +30,13 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
 
   def runServices(testData: TestData[F])(f: TestEnv[F] => F[Assertion])(implicit appTag: AppTag) =
     I.runSync(withServices(testData)(f))
+
+  def timed[A](f: F[A]): F[(A, FiniteDuration)] =
+    for {
+      t1 <- I.lift(System.currentTimeMillis())
+      a  <- f
+      t2 <- I.lift(System.currentTimeMillis())
+    } yield (a, FiniteDuration(t2 - t1, TimeUnit.MILLISECONDS))
 
   import TestData.appTag
 
@@ -193,13 +201,16 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
                                   100.millis,
                                   1.second))
 
-      val result = I.runSync(
-        withServices(testData.copy(services = List(rabbitSpec))) {
-          case _ => M.pure(Succeeded)
-        }.attempt
+      val (result, elapsedTime) = I.runSync(
+        timed {
+          withServices(testData.copy(services = List(rabbitSpec))) {
+            case _ => M.pure(fail("this should time out!"))
+          }.attempt
+        }
       )
 
       result.left.get shouldBe a[TimeoutException]
+      elapsedTime should be > 1.second
       counter.get should ===(10 +- 5)
     }
 
@@ -220,10 +231,12 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
           for {
             service           <- env.serviceRegistry.unsafeLookup(rabbitSpec)
             runningContainers <- env.deps.containerController.runningContainers(service)
+            readyCheckDuration = env.runtimeInfo(service.ref).readyCheckDuration
           } yield {
             service.toSpec should ===(rabbitSpec)
             runningContainers should have size 1
             counter.get() should ===(4)
+            readyCheckDuration.toMillis should ===(300L +- 150L)
           }
         }
       )
