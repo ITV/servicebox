@@ -3,6 +3,7 @@ import ReleaseTransformations._
 
 val monocleVersion = "1.5.0"
 val doobieVersion = "0.5.2"
+val influxDbVersion = "2.9"
 
 val readme     = "README.md"
 val readmePath = file(".") / readme
@@ -118,7 +119,8 @@ lazy val example = withDeps((project in file("example"))
       libraryDependencies ++= Seq(
         "org.flywaydb" % "flyway-core"      % "4.2.0",
         "org.tpolecat" %% "doobie-core"     % doobieVersion,
-        "org.tpolecat" %% "doobie-postgres" % doobieVersion
+        "org.tpolecat" %% "doobie-postgres" % doobieVersion,
+        "org.influxdb" % "influxdb-java"    % influxDbVersion
       ),
       copyReadme := {
       val _      = (tut in Compile).value

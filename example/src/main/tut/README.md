@@ -4,16 +4,15 @@ A type safe library to define and run test dependencies using scala and Docker c
 
 ## Containers and integration testing
 
-Scala's strong type system, when used properly, can help avoiding a range of obvious bugs 
-(e.g. null pointer exceptions), often removing the need for pedantic, low-level unit testing. 
-However, we still find highly valuable testing the integration of several software 
-components. It is in fact at this level that we spot most bugs (e.g. serialisation/deserialisation, 
-missing configuration values, SQL queries working differently across vendors, race conditions, etc.).
+Scala's strong type system, when used properly, can help avoiding a range of otherwise common bugs, 
+often removing the need for pedantic, low-level unit testing. However, we still find highly valuable testing the integration of several software 
+components. It is in fact at this level that we spot most errors (e.g. serialisation/deserialisation, 
+missing configuration values, SQL queries working differently across different database vendors, race conditions, etc.).
 
 Recently, we have started using Docker to streamline the way we run this type of tests, both on
 our development machines and on our continuous integration environment. 
 By allowing us to reproduce a realistic production environment with great flexibility and speed, containers
-are helping us increase our confidence in our testing and continuous delivery process.
+help increase confidence in our testing and continuous integration process.
 
 ### Status
 
@@ -130,7 +129,7 @@ an available host port and expose it in the running service endpoints (see `InMe
 
 ## Detailed example
 
-Please refer to the [example](example) subproject for a working example of how to integrate the library
+Please refer to the [this subproject](example) for a working example of how to integrate the library
 with `scalatest`.
 
 

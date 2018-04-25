@@ -4,16 +4,15 @@ A type safe library to define and run test dependencies using scala and Docker c
 
 ## Containers and integration testing
 
-Scala's strong type system, when used properly, can help avoiding a range of obvious bugs 
-(e.g. null pointer exceptions), often removing the need for pedantic, low-level unit testing. 
-However, we still find highly valuable testing the integration of several software 
-components. It is in fact at this level that we spot most bugs (e.g. serialisation/deserialisation, 
-missing configuration values, SQL queries working differently across vendors, race conditions, etc.).
+Scala's strong type system, when used properly, can help avoiding a range of otherwise common bugs, 
+often removing the need for pedantic, low-level unit testing. However, we still find highly valuable testing the integration of several software 
+components. It is in fact at this level that we spot most errors (e.g. serialisation/deserialisation, 
+missing configuration values, SQL queries working differently across different database vendors, race conditions, etc.).
 
 Recently, we have started using Docker to streamline the way we run this type of tests, both on
 our development machines and on our continuous integration environment. 
 By allowing us to reproduce a realistic production environment with great flexibility and speed, containers
-are helping us increase our confidence in our testing and continuous delivery process.
+help increase confidence in our testing and continuous integration process.
 
 ### Status
 
@@ -116,7 +115,7 @@ defined in the spec, and a `setUp`:
 
 ```scala
 scala> val registered = runner.setUp.unsafeRunSync
-registered: List[com.itv.servicebox.algebra.Service.Registered[cats.effect.IO]] = List(Registered(Postgres,NonEmptyList(Registered(Ref(com.example/some-app/Postgres/postgres:9.5.4),postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),Set((49162,5432)))),NonEmptyList(Location(127.0.0.1,49162)),ReadyCheck(Postgres$$$Lambda$6129/1625766714@32f99460,50 milliseconds,10 seconds,None)))
+registered: List[com.itv.servicebox.algebra.Service.Registered[cats.effect.IO]] = List(Registered(Postgres,NonEmptyList(Registered(Ref(com.example/some-app/Postgres/postgres:9.5.4),postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),Set((49162,5432)))),NonEmptyList(Location(127.0.0.1,49162)),ReadyCheck(Postgres$$$Lambda$8215/483082263@7f205dc1,50 milliseconds,10 seconds,None)))
 ```
 
 This will return a list of `Service.Registered[F[_]]`: a representation of
@@ -135,7 +134,7 @@ an available host port and expose it in the running service endpoints (see `InMe
 
 ## Detailed example
 
-Please refer to the [example](example) subproject for a working example of how to integrate the library
+Please refer to the [this subproject](example) for a working example of how to integrate the library
 with `scalatest`.
 
 
