@@ -4,7 +4,7 @@ import cats.Show
 import cats.data.NonEmptyList
 import cats.syntax.either._
 import cats.syntax.show._
-import com.itv.servicebox.algebra.ServiceRegistry.ContainerMappings
+import com.itv.servicebox.algebra.ServiceRegistry.{ContainerMappings, Endpoints}
 
 import scala.concurrent.duration.{Duration, FiniteDuration}
 import scala.concurrent.{Await, ExecutionContext, Future}
@@ -102,9 +102,12 @@ package object algebra {
             s"Mappings not supplied for for containers: ${diff.mkString(",")}. Mappings supplied: ${mappings}"))(_ =>
             diff.isEmpty)
           .map { cs =>
-            val endpoints =
-              cs.flatMap(_.portMappings).map { case (hostPort, _) => ServiceRegistry.Location.localhost(hostPort) }
-            Registered(name, NonEmptyList.fromListUnsafe(cs), NonEmptyList.fromListUnsafe(endpoints), readyCheck)
+            val locations =
+              cs.flatMap(_.portMappings).map((ServiceRegistry.Location.localhost _).tupled)
+            Registered(name,
+                       NonEmptyList.fromListUnsafe(cs),
+                       Endpoints(NonEmptyList.fromListUnsafe(locations)),
+                       readyCheck)
           }
       }
     }

@@ -4,10 +4,9 @@ import cats.MonadError
 import cats.data.NonEmptyList
 import com.itv.servicebox.algebra.Container.PortMapping
 import com.itv.servicebox.algebra.ServiceRegistry.ContainerMappings
-import cats.syntax.show._
-import cats.syntax.functor._
-import cats.syntax.option._
-import cats.syntax.flatMap._
+import cats.syntax.all._
+import cats.instances.map._
+import cats.instances.int._
 
 abstract class ServiceRegistry[F[_]](logger: Logger[F])(implicit M: MonadError[F, Throwable], appTag: AppTag) {
   def register(service: Service.Spec[F]): F[Service.Registered[F]]
@@ -42,11 +41,24 @@ abstract class ServiceRegistry[F[_]](logger: Logger[F])(implicit M: MonadError[F
 }
 
 object ServiceRegistry {
-  case class Location(host: String, port: Int)
+  case class Location(host: String, port: Int, containerPort: Int)
   object Location {
-    def localhost(port: Int): Location = Location("127.0.0.1", port)
+    def localhost(port: Int, containerPort: Int): Location = Location("127.0.0.1", port, containerPort)
   }
-  type Endpoints = NonEmptyList[Location]
+
+  case class Endpoints(toNel: NonEmptyList[Location]) {
+    val toList   = toNel.toList
+    val mappings = toNel.foldMap(l => Map(l.port -> l.containerPort))
+
+    def locationFor(containerPort: Int): Either[IllegalArgumentException, Location] =
+      toNel
+        .find(_.containerPort == containerPort)
+        .toRight(
+          new IllegalArgumentException(s"Cannot find a location for $containerPort. Existing port mappings: $mappings"))
+
+    def unsafeLocationFor(containerPort: Int): Location =
+      locationFor(containerPort).valueOr(throw _)
+  }
 
   case class EmptyPortList(containerRefs: List[Container.Ref]) extends Throwable
   type ContainerMappings = Map[Container.Ref, Set[PortMapping]]

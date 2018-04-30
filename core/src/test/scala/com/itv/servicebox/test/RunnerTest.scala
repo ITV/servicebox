@@ -49,7 +49,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
           imageDownloaded <- env.deps.imageRegistry.imageExists(testData.postgresSpec.containers.head.imageName)
 
         } yield {
-          service.endpoints.head.port should ===(testData.portRange.take(1).head)
+          service.endpoints.toNel.head.port should ===(testData.portRange.take(1).head)
           imageDownloaded should ===(true)
         }
       }

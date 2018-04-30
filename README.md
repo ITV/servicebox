@@ -70,7 +70,8 @@ object Postgres {
     def dbConnect(endpoints: Endpoints): IO[Unit] =
       for {
         _ <- IOLogger.info("Attempting to connect to DB ...")
-        serviceConfig = config.copy(host = endpoints.head.host, port = endpoints.head.port)
+        ep = endpoints.toNel.head
+        serviceConfig = config.copy(host = ep.host, port = ep.port)
         _ <- pingDb(serviceConfig)
         _ <- IOLogger.info("... connected")
       } yield ()
@@ -81,7 +82,7 @@ object Postgres {
         Container.Spec("postgres:9.5.4",
                        Map("POSTGRES_DB" -> config.dbName, "POSTGRES_PASSWORD" -> config.password),
                        Set(5432))),
-      Service.ReadyCheck[IO](dbConnect, 50.millis, 10.seconds)
+      Service.ReadyCheck[IO](dbConnect, 50.millis, 5.seconds)
     )
   }
 }
@@ -115,7 +116,7 @@ defined in the spec, and a `setUp`:
 
 ```scala
 scala> val registered = runner.setUp.unsafeRunSync
-registered: List[com.itv.servicebox.algebra.Service.Registered[cats.effect.IO]] = List(Registered(Postgres,NonEmptyList(Registered(Ref(com.example/some-app/Postgres/postgres:9.5.4),postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),Set((49162,5432)))),NonEmptyList(Location(127.0.0.1,49162)),ReadyCheck(Postgres$$$Lambda$8215/483082263@7f205dc1,50 milliseconds,10 seconds,None)))
+registered: List[com.itv.servicebox.algebra.Service.Registered[cats.effect.IO]] = List(Registered(Postgres,NonEmptyList(Registered(Ref(com.example/some-app/Postgres/postgres:9.5.4),postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),Set((49162,5432)))),Endpoints(NonEmptyList(Location(127.0.0.1,49162,5432))),ReadyCheck(Postgres$$$Lambda$6243/1689051907@6e0009bd,50 milliseconds,5 seconds,None)))
 ```
 
 This will return a list of `Service.Registered[F[_]]`: a representation of
@@ -126,7 +127,7 @@ scala> import cats.syntax.show._
 import cats.syntax.show._
 
 scala> registered.map(s => s.ref.show -> s.endpoints)
-res0: List[(String, com.itv.servicebox.algebra.ServiceRegistry.Endpoints)] = List((com.example/some-app/Postgres,NonEmptyList(Location(127.0.0.1,49162))))
+res0: List[(String, com.itv.servicebox.algebra.ServiceRegistry.Endpoints)] = List((com.example/some-app/Postgres,Endpoints(NonEmptyList(Location(127.0.0.1,49162,5432)))))
 ```
 
 Notice that, while in the `Postgres` spec we define a container port, the library will automatically assign 
@@ -134,7 +135,7 @@ an available host port and expose it in the running service endpoints (see `InMe
 
 ## Detailed example
 
-Please refer to the [this subproject](example) for a working example of how to integrate the library
+Please refer to [this subproject](example) for an extended example showing how to integrate the library
 with `scalatest`.
 
 

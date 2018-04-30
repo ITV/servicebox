@@ -72,18 +72,16 @@ class InMemoryServiceRegistry[F[_]](range: Range, logger: Logger[F])(implicit ta
 
       err = ServiceRegistry.EmptyPortList(registeredContainers.map(_.ref))
 
-      endpoints <- NonEmptyList
-        .fromList(
-          registeredContainers.flatMap(_.portMappings.map(_._1))
-        )
+      locations <- NonEmptyList
+        .fromList(registeredContainers.flatMap(_.portMappings))
         .fold(M.raiseError[NonEmptyList[Location]](err)) { ports =>
-          M.pure(ports.map(Location.localhost))
+          M.pure(ports.map((Location.localhost _).tupled))
         }
 
       rs = Service.Registered(
         service.name,
         NonEmptyList.fromListUnsafe(registeredContainers),
-        endpoints,
+        ServiceRegistry.Endpoints(locations),
         service.readyCheck
       )
       summary = registeredContainers

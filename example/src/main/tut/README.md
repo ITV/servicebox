@@ -70,7 +70,8 @@ object Postgres {
     def dbConnect(endpoints: Endpoints): IO[Unit] =
       for {
         _ <- IOLogger.info("Attempting to connect to DB ...")
-        serviceConfig = config.copy(host = endpoints.head.host, port = endpoints.head.port)
+        ep = endpoints.toNel.head
+        serviceConfig = config.copy(host = ep.host, port = ep.port)
         _ <- pingDb(serviceConfig)
         _ <- IOLogger.info("... connected")
       } yield ()
@@ -81,7 +82,7 @@ object Postgres {
         Container.Spec("postgres:9.5.4",
                        Map("POSTGRES_DB" -> config.dbName, "POSTGRES_PASSWORD" -> config.password),
                        Set(5432))),
-      Service.ReadyCheck[IO](dbConnect, 50.millis, 10.seconds)
+      Service.ReadyCheck[IO](dbConnect, 50.millis, 5.seconds)
     )
   }
 }
@@ -129,7 +130,7 @@ an available host port and expose it in the running service endpoints (see `InMe
 
 ## Detailed example
 
-Please refer to the [this subproject](example) for a working example of how to integrate the library
+Please refer to [this subproject](example) for an extended example showing how to integrate the library
 with `scalatest`.
 
 
