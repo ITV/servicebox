@@ -59,12 +59,10 @@ object Postgres {
   )
   
   def pingDb(value: DbConfig): IO[Unit] = IO {
-    val check = sql"select 1".query[Unit].unique
-    check.transact(xa)
-  }
+    sql"select 1".query[Unit].unique.transact(xa)
+  } 
 
   def apply(config: DbConfig): Service.Spec[IO] = {
-
     // this will be re-attempted if an error is raised when running the query
     def dbConnect(endpoints: Endpoints): IO[Unit] =
       for {
@@ -88,7 +86,7 @@ object Postgres {
 ```
 
 A `Service.Spec[F[_]]` consists of one or more container descriptions, together with a `ReadyCheck`: an effectfull function
-which will be called repeatedly (i.e. every 50 millis) until it returns successfully or it times out.
+which will be called repeatedly (i.e. every 50 millis) until it either returns successfully or it times out.
 
 Once defined, one or several service specs might be executed through a `Runner`:
 
@@ -103,7 +101,7 @@ scala> val config = Postgres.DbConfig("localhost", "user", "pass", 5432)
 config: Postgres.DbConfig = DbConfig(localhost,user,pass,5432)
 
 scala> val postgresSpec = Postgres(config)
-postgresSpec: com.itv.servicebox.algebra.Service.Spec[cats.effect.IO] = Spec(Postgres,NonEmptyList(Spec(postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),Set(5432))),ReadyCheck(Postgres$$$Lambda$7418/1730266153@7ca9cd28,50 milliseconds,5 seconds,None))
+postgresSpec: com.itv.servicebox.algebra.Service.Spec[cats.effect.IO] = Spec(Postgres,NonEmptyList(Spec(postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),Set(5432))),ReadyCheck(Postgres$$$Lambda$6067/213047182@4faa823d,50 milliseconds,5 seconds,None))
 
 scala> //evaluate only once to prevent shutdown hook to be fired multiple times
      | lazy val runner = {
@@ -121,23 +119,29 @@ defined in the spec, and a `setUp`:
 
 ```scala
 scala> val registeredServices = runner.setUp.unsafeRunSync
-registeredServices: com.itv.servicebox.algebra.ServicesByRef[cats.effect.IO] = ServicesByRef(Map(Ref(com.example/some-app/Postgres) -> Registered(Postgres,NonEmptyList(Registered(Ref(com.example/some-app/Postgres/postgres:9.5.4),postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),Set((49162,5432)))),Endpoints(NonEmptyList(Location(127.0.0.1,49162,5432))),ReadyCheck(Postgres$$$Lambda$7418/1730266153@7ca9cd28,50 milliseconds,5 seconds,None))))
+registeredServices: com.itv.servicebox.algebra.ServicesByRef[cats.effect.IO] = ServicesByRef(Map(Ref(com.example/some-app/Postgres) -> Registered(Postgres,NonEmptyList(Registered(Ref(com.example/some-app/Postgres/postgres:9.5.4),postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),Set((49162,5432)))),Endpoints(NonEmptyList(Location(127.0.0.1,49162,5432))),ReadyCheck(Postgres$$$Lambda$6067/213047182@4faa823d,50 milliseconds,5 seconds,None))))
 ```
 
 This returns us a wrapper of a `Map[Service.Ref, Service.Registered[F]]`
 providing us with some convenience methods to resolve running services/containers:
 
 ```scala
-scala> registeredServices.unsafeLocationFor(postgresSpec.ref, 5432)
-res1: com.itv.servicebox.algebra.Location = Location(127.0.0.1,49162,5432)
+scala> val pgLocation = registeredServices.unsafeLocationFor(postgresSpec.ref, 5432)
+pgLocation: com.itv.servicebox.algebra.Location = Location(127.0.0.1,49162,5432)
 ```
 
-Notice that, while in the `Postgres` spec we define a container port, the library will automatically bind it 
-an available host port (see `InMemoryServiceRegistry` for details).
+Notice that, while in the `Postgres` spec we define a container port, the library will automatically bind it to
+an available host port (see `InMemoryServiceRegistry` for details). Remember that, in order to use the service
+in your tests, you will have to point your app to the dynamically assigned host/port
+
+```scala
+scala> pgLocation.port
+res1: Int = 49162
+```
 
 ## Detailed example
 
-Please refer to [this subproject](example) for an extended example showing how to integrate the library
+Please refer to [this module](example) for a more detailed usage example illustrating how to integrate the library
 with `scalatest`.
 
 ## Key components

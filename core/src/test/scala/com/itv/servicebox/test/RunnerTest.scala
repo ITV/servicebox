@@ -62,7 +62,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
           registered <- env.runner.setUp
 
         } yield {
-          registered.map(_.ref) should ===(testData.services.map(_.ref))
+          registered.toMap.keys.toList should ===(testData.services.map(_.ref))
         }
       }
     }

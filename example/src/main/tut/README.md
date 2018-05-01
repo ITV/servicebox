@@ -59,12 +59,10 @@ object Postgres {
   )
   
   def pingDb(value: DbConfig): IO[Unit] = IO {
-    val check = sql"select 1".query[Unit].unique
-    check.transact(xa)
-  }
+    sql"select 1".query[Unit].unique.transact(xa)
+  } 
 
   def apply(config: DbConfig): Service.Spec[IO] = {
-
     // this will be re-attempted if an error is raised when running the query
     def dbConnect(endpoints: Endpoints): IO[Unit] =
       for {
@@ -88,7 +86,7 @@ object Postgres {
 ```
 
 A `Service.Spec[F[_]]` consists of one or more container descriptions, together with a `ReadyCheck`: an effectfull function
-which will be called repeatedly (i.e. every 50 millis) until it returns successfully or it times out.
+which will be called repeatedly (i.e. every 50 millis) until it either returns successfully or it times out.
 
 Once defined, one or several service specs might be executed through a `Runner`:
 
@@ -121,10 +119,10 @@ This returns us a wrapper of a `Map[Service.Ref, Service.Registered[F]]`
 providing us with some convenience methods to resolve running services/containers:
 
 ```tut
-pgLocation = registeredServices.unsafeLocationFor(postgresSpec.ref, 5432)
+val pgLocation = registeredServices.unsafeLocationFor(postgresSpec.ref, 5432)
 ```
 
-Notice that, while in the `Postgres` spec we define a container port, the library will automatically bind it 
+Notice that, while in the `Postgres` spec we define a container port, the library will automatically bind it to
 an available host port (see `InMemoryServiceRegistry` for details). Remember that, in order to use the service
 in your tests, you will have to point your app to the dynamically assigned host/port
 
@@ -134,7 +132,7 @@ pgLocation.port
 
 ## Detailed example
 
-Please refer to [this subproject](example) for a more detailed example illustrating how to fully integrate the library
+Please refer to [this module](example) for a more detailed usage example illustrating how to integrate the library
 with `scalatest`.
 
 ## Key components
