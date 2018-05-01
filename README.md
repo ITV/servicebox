@@ -44,7 +44,6 @@ import cats.data.NonEmptyList
 import com.itv.servicebox.algebra._
 import com.itv.servicebox.interpreter._
 import com.itv.servicebox.docker
-import ServiceRegistry.Endpoints
 
 import doobie._
 import doobie.implicits._
@@ -100,9 +99,15 @@ import scala.concurrent.ExecutionContext.Implicits.global
 scala> implicit val tag: AppTag = AppTag("com.example", "some-app")
 tag: com.itv.servicebox.algebra.AppTag = AppTag(com.example,some-app)
 
-scala> lazy val runner = {
-     |   val config = Postgres.DbConfig("localhost", "user", "pass", 5432)
-     |   val instance = docker.runner()(Postgres(config))
+scala> val config = Postgres.DbConfig("localhost", "user", "pass", 5432)
+config: Postgres.DbConfig = DbConfig(localhost,user,pass,5432)
+
+scala> val postgresSpec = Postgres(config)
+postgresSpec: com.itv.servicebox.algebra.Service.Spec[cats.effect.IO] = Spec(Postgres,NonEmptyList(Spec(postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),Set(5432))),ReadyCheck(Postgres$$$Lambda$7418/1730266153@7ca9cd28,50 milliseconds,5 seconds,None))
+
+scala> //evaluate only once to prevent shutdown hook to be fired multiple times
+     | lazy val runner = {
+     |   val instance = docker.runner()(postgresSpec)
      |   sys.addShutdownHook {
      |     instance.tearDown.unsafeRunSync()
      |   }
@@ -115,29 +120,25 @@ The service `Runner` exposes two main methods: a `tearDown`, which will kill all
 defined in the spec, and a `setUp`:
 
 ```scala
-scala> val registered = runner.setUp.unsafeRunSync
-registered: List[com.itv.servicebox.algebra.Service.Registered[cats.effect.IO]] = List(Registered(Postgres,NonEmptyList(Registered(Ref(com.example/some-app/Postgres/postgres:9.5.4),postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),Set((49162,5432)))),Endpoints(NonEmptyList(Location(127.0.0.1,49162,5432))),ReadyCheck(Postgres$$$Lambda$6243/1689051907@6e0009bd,50 milliseconds,5 seconds,None)))
+scala> val registeredServices = runner.setUp.unsafeRunSync
+registeredServices: com.itv.servicebox.algebra.ServicesByRef[cats.effect.IO] = ServicesByRef(Map(Ref(com.example/some-app/Postgres) -> Registered(Postgres,NonEmptyList(Registered(Ref(com.example/some-app/Postgres/postgres:9.5.4),postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),Set((49162,5432)))),Endpoints(NonEmptyList(Location(127.0.0.1,49162,5432))),ReadyCheck(Postgres$$$Lambda$7418/1730266153@7ca9cd28,50 milliseconds,5 seconds,None))))
 ```
 
-This will return a list of `Service.Registered[F[_]]`: a representation of
-a running service and its `Endpoints` (i.e. the host/port details needed to interact with it).
+This returns us a wrapper of a `Map[Service.Ref, Service.Registered[F]]`
+providing us with some convenience methods to resolve running services/containers:
 
 ```scala
-scala> import cats.syntax.show._
-import cats.syntax.show._
-
-scala> registered.map(s => s.ref.show -> s.endpoints)
-res0: List[(String, com.itv.servicebox.algebra.ServiceRegistry.Endpoints)] = List((com.example/some-app/Postgres,Endpoints(NonEmptyList(Location(127.0.0.1,49162,5432)))))
+scala> registeredServices.unsafeLocationFor(postgresSpec.ref, 5432)
+res1: com.itv.servicebox.algebra.Location = Location(127.0.0.1,49162,5432)
 ```
 
-Notice that, while in the `Postgres` spec we define a container port, the library will automatically assign 
-an available host port and expose it in the running service endpoints (see `InMemoryServiceRegistry` for details).
+Notice that, while in the `Postgres` spec we define a container port, the library will automatically bind it 
+an available host port (see `InMemoryServiceRegistry` for details).
 
 ## Detailed example
 
 Please refer to [this subproject](example) for an extended example showing how to integrate the library
 with `scalatest`.
-
 
 ## Key components
 

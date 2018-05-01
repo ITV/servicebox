@@ -16,8 +16,8 @@ class Runner[F[_]](ctrl: ServiceController[F], registry: ServiceRegistry[F])(ser
                                                                                                  I: ImpureEffect[F],
                                                                                                  tag: AppTag) {
 
-  def setUp(implicit ec: ExecutionContext): F[List[Registered[F]]] =
-    services.toList.foldM(List.empty[Registered[F]])((acc, s) => setUp(s).map(acc :+ _))
+  def setUp(implicit ec: ExecutionContext): F[ServicesByRef[F]] =
+    services.toList.foldM(ServicesByRef.empty[F])((acc, spec) => setUp(spec).map(acc + _))
 
   def setupWithRuntimeInfo(implicit ec: ExecutionContext): F[List[(Registered[F], RuntimeInfo)]] =
     services.toList.foldM(List.empty[(Registered[F], RuntimeInfo)])((acc, s) => setupWithRuntimeInfo(s).map(acc :+ _))

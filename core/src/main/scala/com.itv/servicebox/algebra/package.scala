@@ -3,13 +3,16 @@ package com.itv.servicebox
 import cats.Show
 import cats.data.NonEmptyList
 import cats.syntax.either._
+import cats.syntax.foldable._
 import cats.syntax.show._
-import com.itv.servicebox.algebra.ServiceRegistry.{ContainerMappings, Endpoints}
-
 import scala.concurrent.duration.{Duration, FiniteDuration}
 import scala.concurrent.{Await, ExecutionContext, Future}
 
 package object algebra {
+  type PortMapping = (Int, Int)
+
+  type ContainerMappings = Map[Container.Ref, Set[PortMapping]]
+
   //TODO: consider adding an organisation/team name
   case class AppTag(org: String, appName: String)
   object AppTag {
@@ -27,14 +30,13 @@ package object algebra {
     object Ref {
       implicit val refShow: Show[Ref] = Show.show(_.value)
     }
-    type PortMapping = (Int, Int)
 
     case class Spec(imageName: String, env: Map[String, String], internalPorts: Set[Int]) extends Container
 
     case class Registered(ref: Container.Ref,
                           imageName: String,
                           env: Map[String, String],
-                          portMappings: Set[Container.PortMapping])
+                          portMappings: Set[PortMapping])
         extends Container {
       lazy val toSpec = Spec(imageName, env, portMappings.map(_._2))
     }
@@ -78,7 +80,7 @@ package object algebra {
 
   object Service {
 
-    case class ReadyCheck[F[_]](isReady: ServiceRegistry.Endpoints => F[Unit],
+    case class ReadyCheck[F[_]](isReady: Endpoints => F[Unit],
                                 attemptTimeout: FiniteDuration,
                                 totalTimeout: FiniteDuration,
                                 label: Option[String] = None)
@@ -103,7 +105,7 @@ package object algebra {
             diff.isEmpty)
           .map { cs =>
             val locations =
-              cs.flatMap(_.portMappings).map((ServiceRegistry.Location.localhost _).tupled)
+              cs.flatMap(_.portMappings).map((Location.localhost _).tupled)
             Registered(name,
                        NonEmptyList.fromListUnsafe(cs),
                        Endpoints(NonEmptyList.fromListUnsafe(locations)),
@@ -114,7 +116,7 @@ package object algebra {
 
     case class Registered[F[_]](name: String,
                                 containers: NonEmptyList[Container.Registered],
-                                endpoints: ServiceRegistry.Endpoints,
+                                endpoints: Endpoints,
                                 readyCheck: ReadyCheck[F])
         extends Service[F, Container.Registered] {
 
@@ -126,7 +128,49 @@ package object algebra {
     }
   }
 
-  //pseudo typeclass to lift a value from a potentially impure effect
+  case class Location(host: String, port: Int, containerPort: Int)
+  object Location {
+    def localhost(port: Int, containerPort: Int): Location = Location("127.0.0.1", port, containerPort)
+  }
+
+  case class Endpoints(toNel: NonEmptyList[Location]) {
+    val toList: List[Location] = toNel.toList
+
+    def locationFor(containerPort: Int): Either[Throwable, Location] = {
+      val portMappings = toNel.map(l => s"${l.port} -> ${l.containerPort}").toList.mkString(", ")
+      toNel
+        .find(_.containerPort == containerPort)
+        .toRight(new IllegalArgumentException(
+          s"Cannot find a location for $containerPort. Existing port mappings: $portMappings"))
+    }
+
+    def unsafeLocationFor(containerPort: Int): Location =
+      locationFor(containerPort).valueOr(throw _)
+  }
+
+  object ServicesByRef {
+    def empty[F[_]]: ServicesByRef[F] = ServicesByRef[F](Map.empty)
+  }
+  case class ServicesByRef[F[_]](toMap: Map[Service.Ref, Service.Registered[F]]) {
+    def toList: List[Service.Registered[F]] = toMap.values.toList
+    def +(registered: Service.Registered[F])(implicit tag: AppTag): ServicesByRef[F] =
+      copy(toMap = toMap + (registered.ref -> registered))
+
+    def locationFor(ref: Service.Ref, containerPort: Int): Either[Throwable, Location] =
+      for {
+        service <- toMap
+          .get(ref)
+          .toRight(new IllegalArgumentException(
+            s"Cannot find a service with ref: ${ref.show}. Registered services: ${toMap.keys.map(_.show).mkString(", ")}"))
+        location <- service.endpoints.locationFor(containerPort)
+
+      } yield location
+
+    def unsafeLocationFor(ref: Service.Ref, containerPort: Int): Location =
+      locationFor(ref, containerPort).valueOr(throw _)
+  }
+
+  //lawless typeclass to lift a value from a potentially impure effect
   //into a monad error
   abstract class ImpureEffect[F[_]] {
     def lift[A](a: => A): F[A]

@@ -1,15 +1,14 @@
 package example
 
 import cats.data.NonEmptyList
-import cats.effect.IO
+import cats.effect.{IO, Timer}
 import cats.syntax.flatMap._
 import cats.syntax.monadError._
-import com.itv.servicebox.algebra.ServiceRegistry.Endpoints
 import com.itv.servicebox.algebra.{Runner, _}
 import com.itv.servicebox.docker
 import com.itv.servicebox.interpreter._
 import org.influxdb.InfluxDBFactory
-import org.influxdb.dto.{Query, QueryResult}
+import org.influxdb.dto.QueryResult
 import org.scalatest.{BeforeAndAfterAll, FlatSpec, Matchers}
 
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -48,7 +47,7 @@ class KVStoreTest extends FlatSpec with Matchers with BeforeAndAfterAll {
       val httpPort = 8086
       val udpPort  = 8088
 
-      def pingAndInit(endpoints: Endpoints): IO[Unit] = {
+      def pingAndInit(endpoints: Endpoints)(implicit timer: Timer[IO]): IO[Unit] = {
         val endpoint = endpoints.unsafeLocationFor(httpPort)
         val config   = baseInfluxConfig.copy(host = endpoint.host, port = endpoint.port)
         val client   = InfluxDBFactory.connect(config.toUrl, config.user, config.password)
@@ -58,7 +57,7 @@ class KVStoreTest extends FlatSpec with Matchers with BeforeAndAfterAll {
           new IllegalArgumentException(s"bad InfluxDB query: ${res.getError}")
 
         for {
-          _ <- IO(Thread.sleep(1000))
+          _ <- timer.sleep(200.millis)
           _ <- IO(client.ping()).ensure(new IllegalStateException("Bad connection status"))(_.isGood)
           _ <- IO(client.query(q.dropPolicy)).ensureOr(queryError)(res => !res.hasError)
           _ <- IO(client.query(q.createPolicy)).ensureOr(queryError)(res => !res.hasError)
@@ -81,11 +80,12 @@ class KVStoreTest extends FlatSpec with Matchers with BeforeAndAfterAll {
       )
     }
 
-    val runner                           = docker.runner()(Postgres.spec, InfluxDb.spec)
-    val pgEndpoints :: nfxEndpoints :: _ = runner.setUp.map(_.map(_.endpoints)).unsafeRunSync()
-    val dbConfig                         = basePostgresConfig.copy(host = pgEndpoints.toNel.head.host, port = pgEndpoints.toNel.head.port)
-    val nfxLocation                      = nfxEndpoints.unsafeLocationFor(InfluxDb.httpPort)
-    val metrixConfig                     = baseInfluxConfig.copy(host = nfxLocation.host, port = nfxLocation.port)
+    val runner        = docker.runner()(Postgres.spec, InfluxDb.spec)
+    val servicesByRef = runner.setUp.unsafeRunSync()
+    val pgLocation    = servicesByRef.unsafeLocationFor(Postgres.spec.ref, Postgres.port)
+    val dbConfig      = basePostgresConfig.copy(host = pgLocation.host, port = pgLocation.port)
+    val nfxLocation   = servicesByRef.unsafeLocationFor(InfluxDb.spec.ref, InfluxDb.httpPort)
+    val metrixConfig  = baseInfluxConfig.copy(host = nfxLocation.host, port = nfxLocation.port)
     (runner, Config(dbConfig, metrixConfig))
   }
 
