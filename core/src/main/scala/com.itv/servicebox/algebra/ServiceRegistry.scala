@@ -1,13 +1,10 @@
 package com.itv.servicebox.algebra
 
 import cats.MonadError
-import cats.data.NonEmptyList
-import com.itv.servicebox.algebra.Container.PortMapping
-import com.itv.servicebox.algebra.ServiceRegistry.ContainerMappings
-import cats.syntax.show._
-import cats.syntax.functor._
 import cats.syntax.option._
+import cats.syntax.show._
 import cats.syntax.flatMap._
+import cats.syntax.functor._
 
 abstract class ServiceRegistry[F[_]](logger: Logger[F])(implicit M: MonadError[F, Throwable], appTag: AppTag) {
   def register(service: Service.Spec[F]): F[Service.Registered[F]]
@@ -42,12 +39,5 @@ abstract class ServiceRegistry[F[_]](logger: Logger[F])(implicit M: MonadError[F
 }
 
 object ServiceRegistry {
-  case class Location(host: String, port: Int)
-  object Location {
-    def localhost(port: Int): Location = Location("127.0.0.1", port)
-  }
-  type Endpoints = NonEmptyList[Location]
-
   case class EmptyPortList(containerRefs: List[Container.Ref]) extends Throwable
-  type ContainerMappings = Map[Container.Ref, Set[PortMapping]]
 }

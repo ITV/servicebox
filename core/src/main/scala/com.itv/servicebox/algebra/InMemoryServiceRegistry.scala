@@ -13,8 +13,6 @@ import cats.syntax.foldable._
 import cats.syntax.functor._
 import cats.syntax.show._
 import cats.syntax.traverse._
-import com.itv.servicebox.algebra.Container.PortMapping
-import com.itv.servicebox.algebra.ServiceRegistry.{ContainerMappings, Location}
 
 import scala.util.Try
 
@@ -72,18 +70,16 @@ class InMemoryServiceRegistry[F[_]](range: Range, logger: Logger[F])(implicit ta
 
       err = ServiceRegistry.EmptyPortList(registeredContainers.map(_.ref))
 
-      endpoints <- NonEmptyList
-        .fromList(
-          registeredContainers.flatMap(_.portMappings.map(_._1))
-        )
+      locations <- NonEmptyList
+        .fromList(registeredContainers.flatMap(_.portMappings))
         .fold(M.raiseError[NonEmptyList[Location]](err)) { ports =>
-          M.pure(ports.map(Location.localhost))
+          M.pure(ports.map((Location.localhost _).tupled))
         }
 
       rs = Service.Registered(
         service.name,
         NonEmptyList.fromListUnsafe(registeredContainers),
-        endpoints,
+        Endpoints(locations),
         service.readyCheck
       )
       summary = registeredContainers
