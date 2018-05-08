@@ -21,7 +21,7 @@ class ServiceController[F[_]](logger: Logger[F],
       containerGroups <- ctrl.containerGroups(registered)
 
       _ <- logger.debug(
-        s"found ${containerGroups.notMatched.size} running containers which do not match the current spec for ${spec.ref} ...")
+        s"found ${containerGroups.notMatched.size} running containers which do not match the current spec for ${spec.ref}: ${containerGroups.notMatched} ...")
 
       toStop = containerGroups.notMatched
       _ <- toStop.traverse(c => ctrl.stopContainer(registered.ref, c.ref))

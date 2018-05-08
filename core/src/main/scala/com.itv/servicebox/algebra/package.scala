@@ -31,14 +31,19 @@ package object algebra {
       implicit val refShow: Show[Ref] = Show.show(_.value)
     }
 
-    case class Spec(imageName: String, env: Map[String, String], internalPorts: Set[Int]) extends Container
+    case class Spec(imageName: String,
+                    env: Map[String, String],
+                    internalPorts: Set[Int],
+                    command: Option[NonEmptyList[String]])
+        extends Container
 
     case class Registered(ref: Container.Ref,
                           imageName: String,
                           env: Map[String, String],
-                          portMappings: Set[PortMapping])
+                          portMappings: Set[PortMapping],
+                          command: Option[NonEmptyList[String]])
         extends Container {
-      lazy val toSpec = Spec(imageName, env, portMappings.map(_._2))
+      lazy val toSpec = Spec(imageName, env, portMappings.map(_._2), command)
     }
 
     trait Matcher[Repr] {
@@ -95,7 +100,7 @@ package object algebra {
         val registeredContainers = containerList.flatMap { c =>
           mappings
             .get(c.ref(ref))
-            .map(ms => Container.Registered(c.ref(ref), c.imageName, c.env, ms))
+            .map(ms => Container.Registered(c.ref(ref), c.imageName, c.env, ms, c.command))
         }
 
         registeredContainers
