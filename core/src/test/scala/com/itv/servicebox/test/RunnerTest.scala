@@ -191,10 +191,11 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
 
       runServices(data) { env =>
         for {
-          service <- env.serviceRegistry.unsafeLookup(serviceSpec)
-          //TODO: fix network mapping
-//          runningContainers <- env.deps.containerController.runningContainers(service)
+          service           <- env.serviceRegistry.unsafeLookup(serviceSpec)
+          runningContainers <- env.deps.containerController.runningContainers(service)
         } yield {
+          runningContainers should have size 1
+          runningContainers should !==(preExisting.map(_.container))
           service.containers.map(_.toSpec) should ===(data.services.head.containers)
         }
       }

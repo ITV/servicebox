@@ -34,7 +34,7 @@ package object algebra {
     case class Spec(imageName: String,
                     env: Map[String, String],
                     internalPorts: Set[Int],
-                    command: Option[NonEmptyList[String]])
+                    command: Option[NonEmptyList[String]] = None)
         extends Container
 
     case class Registered(ref: Container.Ref,

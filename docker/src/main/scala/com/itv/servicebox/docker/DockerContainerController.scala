@@ -86,7 +86,8 @@ class DockerContainerController[F[_]](dockerClient: DefaultDockerClient, logger:
   private def containerConfig(serviceRef: Service.Ref, container: Container.Registered): ContainerConfig = {
     val bindings = (mutable.Map.empty[Int, Int] ++ container.portMappings).map {
       case (hostPort, containerPort) =>
-        s"$containerPort/tcp" -> List(PortBinding.of("", hostPort.toString)).asJava
+        //TODO: introduce a more granular mechanism to control whether to bind UDP/TCP ports
+        s"$containerPort/tcp" -> List(PortBinding.of("0.0.0.0", hostPort.toString)).asJava
     }.asJava
 
     val hostConfig = HostConfig.builder().portBindings(bindings).build()
@@ -97,6 +98,7 @@ class DockerContainerController[F[_]](dockerClient: DefaultDockerClient, logger:
       .labels(labels.asJava)
       .env(container.env.map { case (k, v) => s"$k=$v" }.toList.asJava)
       .hostConfig(hostConfig)
+      .exposedPorts(bindings.keySet())
       .image(container.imageName)
 
     container.command.fold(config)(nel => config.cmd(nel.toList.asJava)).build()
