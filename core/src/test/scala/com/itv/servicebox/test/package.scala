@@ -1,12 +1,11 @@
 package com.itv.servicebox
 
-import java.util.concurrent.TimeUnit
-
 import cats.data.NonEmptyList
-import cats.{Applicative, FlatMap, Functor, MonadError}
+import cats.{Applicative, Functor, MonadError}
 import com.itv.servicebox.algebra.{ImpureEffect, InMemoryServiceRegistry, _}
 import org.scalatest.Assertion
 import org.scalatest.Matchers._
+import cats.syntax.show._
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
@@ -39,9 +38,16 @@ package object test {
 
     def default[F[_]: Applicative] = TestData[F](
       portRange,
-      List(postgresSpec[F], rabbitSpec[F]),
+      List(postgresSpec[F], rabbitSpec[F]).map(s => s.ref -> s).toMap,
       Nil
     )
+
+    def apply[F[_]](spec: Service.Spec[F]*)(implicit A: Applicative[F]): TestData[F] =
+      new TestData(portRange, spec.map(s => s.ref -> s).toMap, Nil)
+
+    def apply[F[_]](portRange: Range, specs: List[Service.Spec[F]], preExisting: List[RunningContainer])(
+        implicit A: Applicative[F]): TestData[F] =
+      new TestData(portRange, specs.map(s => s.ref -> s).toMap, Nil)
   }
 
   case class RunningContainer(container: Container.Registered, serviceRef: Service.Ref)
@@ -49,21 +55,32 @@ package object test {
   //TODO: rewrite this as an ADT, allowing different setup behaviours
   // - WithPreExisting(...)
   // - Default(...)
-  case class TestData[F[_]](portRange: Range, services: List[Service.Spec[F]], preExisting: List[RunningContainer])(
-      implicit A: Applicative[F]) {
+  case class TestData[F[_]](portRange: Range,
+                            servicesByRef: Map[Service.Ref, Service.Spec[F]],
+                            preExisting: List[RunningContainer])(implicit A: Applicative[F]) {
+    private val AL = algebra.Lenses
+    private val TL = test.Lenses
 
-    def postgresSpec =
-      services
-        .find(_.name == TestData.postgresSpec[F].name)
-        .getOrElse(fail(s"Undefined service spec ${TestData.postgresSpec.name}"))
+    //TODO: fix this mess!
+    implicit val appTag: AppTag = TestData.appTag
 
-    def rabbitSpec =
-      services
-        .find(_.name == TestData.rabbitSpec[F].name)
-        .getOrElse(fail(s"Undefined service spec ${TestData.rabbitSpec.name}"))
+    //TODO: delete
+    def services: List[Service.Spec[F]] = servicesByRef.values.toList
 
-    def withPostgresOnly = copy(services = List(postgresSpec))
-    def withRabbitOnly   = copy(services = List(rabbitSpec))
+    def withSpecs(specs: Service.Spec[F]*): TestData[F] =
+      TL.services.set(specs.map(s => s.ref -> s).toMap)(this)
+
+    def withPreExisting(containers: RunningContainer*): TestData[F] =
+      TL.preExisting.set(containers.toList)(this)
+
+    def modifyPortRange(f: Range => Range): TestData[F] =
+      TL.portRange.modify(f)(this)
+
+    def serviceAt(serviceRef: Service.Ref): Service.Spec[F] =
+      TL.serviceAt(serviceRef)
+        .getOption(this)
+        .getOrElse(fail(s"cannot find service ${serviceRef.show} in $this"))
+
   }
 
   class Dependencies[F[_]](
@@ -99,9 +116,9 @@ package object test {
     val runner          = deps.runner(controller, serviceRegistry, testData.services)
 
     import cats.instances.list._
+    import cats.syntax.flatMap._
     import cats.syntax.foldable._
     import cats.syntax.functor._
-    import cats.syntax.flatMap._
 
     //Note: we use foldM and not traverse here to avoid parallel execution
     // (which happens in the case of the default cats instance of `Traverse[Future]`)

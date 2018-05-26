@@ -11,34 +11,36 @@ import cats.syntax.functor._
 import cats.syntax.flatMap._
 import cats.instances.all._
 
-import com.itv.servicebox.algebra.Service._
+import Service._
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.FiniteDuration
 
-class Runner[F[_]](ctrl: ServiceController[F], registry: ServiceRegistry[F])(services: Spec[F]*)(
+class Runner[F[_]](ctrl: ServiceController[F], registry: ServiceRegistry[F])(serviceSeq: Spec[F]*)(
     implicit M: MonadError[F, Throwable],
     I: ImpureEffect[F],
     tag: AppTag) {
 
+  private val services = serviceSeq.toList
+
   def setUp(implicit ec: ExecutionContext): F[ServicesByRef[F]] =
     for {
-      services <- M.fromEither(servicesInReverseTopologicalOrder)
+      services <- servicesInReverseTopologicalOrder
       //TODO: add monoidK instance
       registered <- services.foldM(ServicesByRef.empty[F])((acc, spec) => setUp(spec, acc).map(acc + _))
     } yield registered
 
   def setupWithRuntimeInfo(implicit ec: ExecutionContext): F[List[(Registered[F], RuntimeInfo)]] =
-    services.toList.foldM(List.empty[(Registered[F], RuntimeInfo)])((acc, s) => setupWithRuntimeInfo(s).map(acc :+ _))
+    services.foldM(List.empty[(Registered[F], RuntimeInfo)])((acc, s) => setupWithRuntimeInfo(s).map(acc :+ _))
 
   def tearDown(implicit ec: ExecutionContext): F[Unit] =
-    services.toList.foldM(())((_, s) => tearDown(s).void)
+    services.foldM(())((_, s) => tearDown(s).void)
 
-  private def servicesInReverseTopologicalOrder: Either[Throwable, List[Service.Spec[F]]] = {
+  private def servicesInReverseTopologicalOrder: F[List[Service.Spec[F]]] = M.fromEither {
     val servicesByRef = services.groupBy(_.ref).mapValues(_.head)
 
-    val incomingEdges = services.toList.foldMap { s =>
-      Map(s.ref -> Set.empty[Service.Ref]) ++ s.dependsOn.toList.foldMap { dep =>
+    val incomingEdges = services.foldMap { s =>
+      Map(s.ref -> Set.empty[Service.Ref]) ++ s.dependencies.toList.foldMap { dep =>
         Map(dep -> Set(s.ref))
       }
     }
@@ -52,14 +54,13 @@ class Runner[F[_]](ctrl: ServiceController[F], registry: ServiceRegistry[F])(ser
         servicesByRef.get(ref).toRight(refNotFound(ref)))
 
     } yield sortedSpecs
-
   }
 
   private def setUp(spec: Spec[F], registered: ServicesByRef[F])(implicit ec: ExecutionContext): F[Registered[F]] =
     for {
 
-      depenendanciesEnv <- spec.dependsOn.toList
-        .foldMapM[F, Map[String, String]](ref => M.fromEither(registered.envFor(ref)))
+      depenendanciesEnv <- spec.dependencies.toList
+        .foldMapM[F, Map[String, String]](ref => registered.envFor(ref))
 
       registered <- ctrl.start(spec.mergeToContainersEnv(depenendanciesEnv))
       _          <- ctrl.waitUntilReady(registered)

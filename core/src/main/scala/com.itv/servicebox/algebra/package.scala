@@ -1,20 +1,22 @@
 package com.itv.servicebox
 
-import cats.Show
 import cats.data.NonEmptyList
-import cats.syntax.either._
-import cats.syntax.show._
-import cats.syntax.foldable._
 import cats.instances.all._
+import cats.syntax.either._
+import cats.syntax.foldable._
+import cats.syntax.show._
+import cats.{ApplicativeError, Show}
+
 import scala.concurrent.duration.{Duration, FiniteDuration}
 import scala.concurrent.{Await, ExecutionContext, Future}
 
 package object algebra {
+  private val L = Lenses
+
   type PortMapping = (Int, Int)
 
   type ContainerMappings = Map[Container.Ref, Set[PortMapping]]
 
-  //TODO: consider adding an organisation/team name
   case class AppTag(org: String, appName: String)
   object AppTag {
     implicit val appTagShow: Show[AppTag] = Show.show(tag => s"${tag.org}/${tag.appName}")
@@ -83,7 +85,7 @@ package object algebra {
     def ref(implicit tag: AppTag): Service.Ref = Service.Ref(s"${tag.show}/$name")
     def containers: NonEmptyList[C]
     def readyCheck: Service.ReadyCheck[F]
-    def dependsOn: Set[Service.Ref]
+    def dependencies: Set[Service.Ref]
   }
 
   object Service {
@@ -98,18 +100,18 @@ package object algebra {
     case class Spec[F[_]](name: String,
                           containers: NonEmptyList[Container.Spec],
                           readyCheck: ReadyCheck[F],
-                          dependsOn: Set[Service.Ref] = Set.empty)
+                          dependencies: Set[Service.Ref] = Set.empty)
         extends Service[F, Container.Spec] {
 
-      def dependsOn(spec: Service.Spec[F])(implicit tag: AppTag): Spec[F] =
-        copy(dependsOn = dependsOn + spec.ref)
+      def dependsOn(ref: Service.Ref): Service.Spec[F] =
+        L.dependsOn.modify(_ + ref)(this)
 
-      def mergeToContainersEnv(extra: Map[String, String]): Spec[F] =
-        copy(containers = containers.map(c => c.copy(env = c.env ++ extra)))
+      def mergeToContainersEnv(extra: Map[String, String]): Service.Spec[F] =
+        L.eachContainerEnv.modify(_ ++ extra)(this)
 
-      def register(mappings: ContainerMappings)(implicit tag: AppTag): Either[Throwable, Registered[F]] = {
+      def register(mappings: ContainerMappings)(implicit tag: AppTag): Either[Throwable, Service.Registered[F]] = {
         val containerList = containers.toList
-        val diff          = containerList.map(_.ref(this.ref)).toSet diff mappings.keySet
+        val diff          = containerList.map(_.ref(ref)).toSet diff mappings.keySet
         val registeredContainers = containerList.flatMap { c =>
           mappings
             .get(c.ref(ref))
@@ -124,11 +126,11 @@ package object algebra {
           .map { cs =>
             val locations =
               cs.flatMap(_.portMappings).map((Location.localhost _).tupled)
-            Registered(name,
-                       NonEmptyList.fromListUnsafe(cs),
-                       Endpoints(NonEmptyList.fromListUnsafe(locations)),
-                       readyCheck,
-                       dependsOn)
+            Service.Registered(name,
+                               NonEmptyList.fromListUnsafe(cs),
+                               Endpoints(NonEmptyList.fromListUnsafe(locations)),
+                               readyCheck,
+                               dependencies)
           }
       }
     }
@@ -137,7 +139,7 @@ package object algebra {
                                 containers: NonEmptyList[Container.Registered],
                                 endpoints: Endpoints,
                                 readyCheck: ReadyCheck[F],
-                                dependsOn: Set[Service.Ref])
+                                dependencies: Set[Service.Ref])
         extends Service[F, Container.Registered] {
 
       def toSpec = Spec(name, containers.map(_.toSpec), readyCheck)
@@ -164,15 +166,18 @@ package object algebra {
           s"Cannot find a location for $containerPort. Existing port mappings: $portMappings"))
     }
 
-    def unsafeLocationFor(containerPort: Int): Location =
-      locationFor(containerPort).valueOr(throw _)
+    def unsafeLocationFor[F[_]](containerPort: Int)(implicit A: ApplicativeError[F, Throwable]): F[Location] =
+      A.fromEither(locationFor(containerPort))
   }
 
   object ServicesByRef {
-    def empty[F[_]]: ServicesByRef[F] = ServicesByRef[F](Map.empty)
+    def empty[F[_]](implicit A: ApplicativeError[F, Throwable]): ServicesByRef[F] = ServicesByRef[F](Map.empty)(A)
   }
-  case class ServicesByRef[F[_]](toMap: Map[Service.Ref, Service.Registered[F]]) {
+
+  case class ServicesByRef[F[_]](toMap: Map[Service.Ref, Service.Registered[F]])(
+      implicit A: ApplicativeError[F, Throwable]) {
     def toList: List[Service.Registered[F]] = toMap.values.toList
+
     def +(registered: Service.Registered[F])(implicit tag: AppTag): ServicesByRef[F] =
       copy(toMap = toMap + (registered.ref -> registered))
 
@@ -183,18 +188,11 @@ package object algebra {
     private def serviceFor(ref: Service.Ref): Either[Throwable, Service.Registered[F]] =
       toMap.get(ref).toRight(refNotFound(ref))
 
-    def locationFor(ref: Service.Ref, containerPort: Int): Either[Throwable, Location] =
-      for {
-        service  <- serviceFor(ref)
-        location <- service.endpoints.locationFor(containerPort)
+    def locationFor(ref: Service.Ref, containerPort: Int): F[Location] =
+      A.fromEither(serviceFor(ref).flatMap(_.endpoints.locationFor(containerPort)))
 
-      } yield location
-
-    def unsafeLocationFor(ref: Service.Ref, containerPort: Int): Location =
-      locationFor(ref, containerPort).valueOr(throw _)
-
-    def envFor(serviceRef: Service.Ref): Either[Throwable, Map[String, String]] =
-      for {
+    def envFor(serviceRef: Service.Ref): F[Map[String, String]] =
+      A.fromEither(for {
         service <- serviceFor(serviceRef)
 
         containerRefPorts = service.containers.toList.flatMap(c =>
@@ -209,18 +207,18 @@ package object algebra {
               )
             }
         }
-      } yield env
+      } yield env)
   }
 
   //lawless typeclass to lift a value from a potentially impure effect
-  //into a monad error
+  //into an F
   abstract class ImpureEffect[F[_]] {
     def lift[A](a: => A): F[A]
     def runSync[A](effect: F[A]): A
   }
 
   object ImpureEffect {
-    implicit def futureImpure(implicit ec: ExecutionContext) =
+    implicit def futureImpure(implicit ec: ExecutionContext): ImpureEffect[Future] =
       new ImpureEffect[Future]() {
         override def lift[A](a: => A)             = Future(a)
         override def runSync[A](fa: Future[A]): A = Await.result(fa, Duration.Inf)

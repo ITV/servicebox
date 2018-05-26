@@ -81,7 +81,7 @@ class InMemoryServiceRegistry[F[_]](range: Range, logger: Logger[F])(implicit ta
         NonEmptyList.fromListUnsafe(registeredContainers),
         Endpoints(locations),
         service.readyCheck,
-        service.dependsOn
+        service.dependencies
       )
       summary = registeredContainers
         .map(c => s"[${c.ref.show}] ${c.portMappings.map { case (host, guest) => s"$host -> $guest" }.mkString(", ")}")

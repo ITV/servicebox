@@ -39,15 +39,23 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
       t2 <- I.lift(System.currentTimeMillis())
     } yield (a, FiniteDuration(t2 - t1, TimeUnit.MILLISECONDS))
 
+  object Specs {
+    val nc  = TestData.ncSpec[F]
+    val pg  = TestData.postgresSpec[F]
+    val rmq = TestData.rabbitSpec[F]
+  }
+
   import TestData.appTag
 
   "setUp" - {
     "initialises the service and updates the registry" in {
-      val testData = TestData.default[F].withPostgresOnly
+      val testData = TestData(Specs.pg)
+      val spec     = testData.serviceAt(Specs.pg.ref)
+
       runServices(testData) { env =>
         for {
-          service         <- env.serviceRegistry.unsafeLookup(testData.postgresSpec)
-          imageDownloaded <- env.deps.imageRegistry.imageExists(testData.postgresSpec.containers.head.imageName)
+          service         <- env.serviceRegistry.unsafeLookup(spec)
+          imageDownloaded <- env.deps.imageRegistry.imageExists(spec.containers.head.imageName)
 
         } yield {
           service.endpoints.toNel.head.port should ===(testData.portRange.take(1).head)
@@ -71,22 +79,19 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
       //
       //   RMQ -> PG -> NC
       //
-      val nc  = TestData.ncSpec[F]
-      val pg  = TestData.postgresSpec[F].copy(dependsOn = Set(nc.ref))
-      val rmq = TestData.rabbitSpec[F].copy(dependsOn = Set(pg.ref))
 
-      runServices(
-        TestData
-          .default[F]
-          .copy(services = List(pg, rmq, nc))) { testEnv =>
+      val nc  = Specs.nc
+      val pg  = Specs.pg.dependsOn(nc.ref)
+      val rmq = Specs.rmq.dependsOn(pg.ref)
+
+      runServices(TestData(pg, rmq, nc)) { testEnv =>
         for {
           registered <- testEnv.runner.setUp
+          ncPort = nc.containers.head.internalPorts.head
+          pgPort = pg.containers.head.internalPorts.head
+          ncLocation <- registered.locationFor(nc.ref, ncPort)
+          pgLocation <- registered.locationFor(pg.ref, pgPort)
         } yield {
-          val ncPort = nc.containers.head.internalPorts.head
-          val pgPort = pg.containers.head.internalPorts.head
-
-          val ncLocation = registered.unsafeLocationFor(nc.ref, ncPort)
-          val pgLocation = registered.unsafeLocationFor(pg.ref, pgPort)
 
           val pgEnv  = registered.toMap(pg.ref).containers.head.env.toList
           val rmqEnv = registered.toMap(rmq.ref).containers.head.env.toList
@@ -101,27 +106,28 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
     }
 
     "assigns a host port for each container port in the spec" in {
-      val data0 = TestData.default[F].withRabbitOnly
-      val data  = data0.copy(portRange = data0.portRange.reverse)
+      val data = TestData(Specs.rmq).modifyPortRange(_.reverse)
+      val spec = data.serviceAt(Specs.rmq.ref)
+
       runServices(data) { env =>
         for {
-          service <- env.serviceRegistry.unsafeLookup(data.rabbitSpec)
+          service <- env.serviceRegistry.unsafeLookup(spec)
 
         } yield {
           val hostPortsBound =
-            data.portRange.take(data.rabbitSpec.containers.toList.flatMap(_.internalPorts).size).toList
+            data.portRange.take(spec.containers.toList.flatMap(_.internalPorts).size).toList
 
           service.endpoints.toList.map(_.port) should ===(hostPortsBound)
         }
       }
     }
     "does not assign a port that is in-range, but bound to a running service" in {
-      val testData = TestData.default[F].withRabbitOnly
+      val testData = TestData(Specs.rmq)
       val server   = new ServerSocket(TestData.portRange.head)
       try {
         runServices(testData) { env =>
           for {
-            service <- env.serviceRegistry.unsafeLookup(testData.rabbitSpec)
+            service <- env.serviceRegistry.unsafeLookup(Specs.rmq)
           } yield {
             Try(new Socket("localhost", TestData.portRange.head).close()) should ===(Success(()))
             service.endpoints.toList.map(_.port) should ===(testData.portRange.slice(1, 3).toList)
@@ -133,7 +139,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
     }
     "matches running containers" in {
       val testData      = TestData.default[F]
-      val serviceSpec   = testData.rabbitSpec
+      val serviceSpec   = testData.serviceAt(Specs.rmq.ref)
       val containerSpec = serviceSpec.containers.head
 
       val portsMapped = containerSpec.internalPorts.size
@@ -148,28 +154,29 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
         containerSpec.command
       )
 
-      val preExisting = List(RunningContainer(registered, serviceSpec.ref))
+      val preExisting = RunningContainer(registered, serviceSpec.ref)
 
       runServices(
-        testData.copy(
-          preExisting = preExisting,
-          portRange = TestData.portRange.drop(portsMapped)
-        )) { env =>
+        testData
+          .withPreExisting(preExisting)
+          .modifyPortRange(
+            _.drop(portsMapped)
+          )) { env =>
         for {
           service           <- env.serviceRegistry.unsafeLookup(serviceSpec)
           runningContainers <- env.deps.containerController.runningContainers(service)
         } yield {
           service.containers.toList should ===(List(registered))
           runningContainers should have size 1
-          runningContainers should ===(preExisting.map(_.container))
+          runningContainers should ===(List(preExisting.container))
           runningContainers should ===(service.containers.toList)
         }
       }
     }
 
     "tears down containers that do not match the spec because of env changes" in {
-      val testData      = TestData.default[F].withPostgresOnly
-      val serviceSpec   = testData.postgresSpec
+      val testData      = TestData(Specs.pg)
+      val serviceSpec   = Specs.pg
       val containerSpec = serviceSpec.containers.head
 
       val portsMapped = containerSpec.internalPorts.size
@@ -184,9 +191,12 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
       )
 
       val preExisting =
-        List(RunningContainer(runningPostgres, serviceSpec.ref))
+        RunningContainer(runningPostgres, serviceSpec.ref)
 
-      val updatedData = TestData[F](testData.portRange.drop(portsMapped), List(serviceSpec), preExisting)
+      val updatedData =
+        TestData[F](serviceSpec)
+          .modifyPortRange(_.drop(portsMapped))
+          .withPreExisting(preExisting)
 
       runServices(updatedData) { env =>
         for {
@@ -194,7 +204,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
           runningContainers <- env.deps.containerController.runningContainers(service)
         } yield {
           runningContainers should have size 1
-          runningContainers should !==(preExisting.map(_.container))
+          runningContainers should !==(List(preExisting.container))
           service.containers.map(_.toSpec) should ===(updatedData.services.head.containers)
         }
       }
@@ -217,9 +227,11 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
       )
 
       val preExisting =
-        List(RunningContainer(running, serviceSpec.ref))
+        RunningContainer(running, serviceSpec.ref)
 
-      val data = TestData[F](portRange.drop(portsMapped), List(serviceSpec), preExisting)
+      val data = TestData[F](serviceSpec)
+        .modifyPortRange(_.drop(portsMapped))
+        .withPreExisting(preExisting)
 
       runServices(data) { env =>
         for {
@@ -227,29 +239,29 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
           runningContainers <- env.deps.containerController.runningContainers(service)
         } yield {
           runningContainers should have size 1
-          runningContainers should !==(preExisting.map(_.container))
+          runningContainers should !==(List(preExisting.container))
           service.containers.map(_.toSpec) should ===(data.services.head.containers)
         }
       }
     }
 
     "raises an error if the unallocated port range cannot fit the ports in the spec" in {
-      I.runSync(withServices(TestData.default[F].copy(portRange = TestData.portRange.take(1))) {
+      I.runSync(withServices(TestData.default[F].modifyPortRange(_.take(1))) {
           case _ =>
             M.pure(Succeeded)
         }.attempt)
         .isLeft should ===(true)
     }
     "raises an error if a service container definition result in an empty port list" in {
-      val testData                  = TestData.default[F].withRabbitOnly
-      val containersNoInternalPorts = testData.rabbitSpec.containers.map(c => c.copy(internalPorts = Set.empty))
-      val spec                      = testData.rabbitSpec.copy(containers = containersNoInternalPorts)
-      val containerRefs             = containersNoInternalPorts.toList.map(_.ref(testData.rabbitSpec.ref))
+      val testData                  = TestData[F](Specs.rmq)
+      val containersNoInternalPorts = Specs.rmq.containers.map(c => c.copy(internalPorts = Set.empty))
+      val spec                      = Specs.rmq.copy(containers = containersNoInternalPorts)
+      val containerRefs             = containersNoInternalPorts.toList.map(_.ref(Specs.rmq.ref))
 
       val expected =
         ServiceRegistry.EmptyPortList(containerRefs)
 
-      I.runSync(withServices(testData.copy(services = List(spec))) {
+      I.runSync(withServices(testData.withSpecs(spec)) {
           case _ =>
             M.pure(Succeeded)
         }.attempt)
@@ -260,18 +272,18 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
     "raises an error if a service ready-check times out" in {
       val testData = TestData.default[F]
       val counter  = new AtomicInteger(0)
-      val rabbitSpec = TestData
-        .rabbitSpec[F]
-        .copy(
-          readyCheck = ReadyCheck(_ =>
-                                    I.lift(counter.getAndIncrement()) >> M.raiseError[Unit](
-                                      new IllegalStateException(s"Cannot access test service")),
-                                  100.millis,
-                                  1.second))
+      val rabbitSpec =
+        Specs.rmq
+          .copy(
+            readyCheck = ReadyCheck(_ =>
+                                      I.lift(counter.getAndIncrement()) >> M.raiseError[Unit](
+                                        new IllegalStateException(s"Cannot access test service")),
+                                    100.millis,
+                                    1.second))
 
       val (result, elapsedTime) = I.runSync(
         timed {
-          withServices(testData.copy(services = List(rabbitSpec))) {
+          withServices(testData.withSpecs(rabbitSpec)) {
             case _ => M.pure(fail("this should time out!"))
           }.attempt
         }
@@ -283,10 +295,8 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
     }
 
     "recovers from errors when ready-checks eventually succeed" in {
-      val testData = TestData.default[F]
-      val counter  = new AtomicInteger(0)
-      val rabbitSpec = TestData
-        .rabbitSpec[F]
+      val counter = new AtomicInteger(0)
+      val rabbitSpec = Specs.rmq
         .copy(readyCheck = ReadyCheck(_ => {
           if (counter.getAndIncrement() < 3)
             M.raiseError[Unit](new IllegalStateException(s"Cannot access test service"))
@@ -295,7 +305,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
         }, 100.millis, 1.second))
 
       I.runSync(
-        withServices(testData.copy(services = List(rabbitSpec))) { env =>
+        withServices(TestData(rabbitSpec)) { env =>
           for {
             service           <- env.serviceRegistry.unsafeLookup(rabbitSpec)
             runningContainers <- env.deps.containerController.runningContainers(service)
@@ -314,9 +324,10 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
   "tearDown" - {
     "shuts down the services and updates the registry" in {
       val testData = TestData.default[F]
+      val spec     = testData.serviceAt(Specs.rmq.ref)
       runServices(testData) { env =>
         for {
-          service           <- env.serviceRegistry.unsafeLookup(testData.postgresSpec)
+          service           <- env.serviceRegistry.unsafeLookup(spec)
           _                 <- env.runner.tearDown
           maybeSrv          <- env.serviceRegistry.lookup(service.ref)
           runningContainers <- env.deps.containerController.runningContainers(service)
