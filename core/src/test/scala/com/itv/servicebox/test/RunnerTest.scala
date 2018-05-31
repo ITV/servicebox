@@ -5,6 +5,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 import cats.MonadError
+import cats.data.NonEmptyList
 import cats.syntax.applicativeError._
 import cats.syntax.flatMap._
 import cats.syntax.functor._
@@ -111,7 +112,8 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
         containerSpec.ref(serviceSpec.ref),
         containerSpec.imageName,
         containerSpec.env,
-        mappings
+        mappings,
+        containerSpec.command
       )
 
       val preExisting = List(RunningContainer(registered, serviceSpec.ref))
@@ -133,12 +135,11 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
       }
     }
 
-    "tears down containers that do not match the spec" in {
+    "tears down containers that do not match the spec because of env changes" in {
       val testData      = TestData.default[F].withPostgresOnly
       val serviceSpec   = testData.postgresSpec
       val containerSpec = serviceSpec.containers.head
 
-//      TODO: extract this logic into a testData syntax package
       val portsMapped = containerSpec.internalPorts.size
       val mappings    = containerSpec.internalPorts.zip(testData.portRange.take(portsMapped)).map(_.swap)
 
@@ -146,7 +147,8 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
         containerSpec.ref(serviceSpec.ref),
         containerSpec.imageName,
         Map("POSTGRES_DB" -> "other-db"),
-        mappings
+        mappings,
+        containerSpec.command
       )
 
       val preExisting =
@@ -165,6 +167,40 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
         }
       }
     }
+
+    "tears down containers that do not match the spec because of a command change" in {
+      val serviceSpec   = TestData.ncSpec[F]
+      val portRange     = TestData.portRange
+      val containerSpec = serviceSpec.containers.head
+
+      val portsMapped = containerSpec.internalPorts.size
+      val mappings    = containerSpec.internalPorts.zip(portRange.take(portsMapped)).map(_.swap)
+
+      val running = Container.Registered(
+        containerSpec.ref(serviceSpec.ref),
+        containerSpec.imageName,
+        containerSpec.env,
+        mappings,
+        Some(NonEmptyList.of("-v", "-l", "8080"))
+      )
+
+      val preExisting =
+        List(RunningContainer(running, serviceSpec.ref))
+
+      val data = TestData[F](portRange.drop(portsMapped), List(serviceSpec), preExisting)
+
+      runServices(data) { env =>
+        for {
+          service           <- env.serviceRegistry.unsafeLookup(serviceSpec)
+          runningContainers <- env.deps.containerController.runningContainers(service)
+        } yield {
+          runningContainers should have size 1
+          runningContainers should !==(preExisting.map(_.container))
+          service.containers.map(_.toSpec) should ===(data.services.head.containers)
+        }
+      }
+    }
+
     "raises an error if the unallocated port range cannot fit the ports in the spec" in {
       I.runSync(withServices(TestData.default[F].copy(portRange = TestData.portRange.take(1))) {
           case _ =>

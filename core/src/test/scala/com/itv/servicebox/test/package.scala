@@ -21,14 +21,20 @@ package object test {
 
     def postgresSpec[F[_]: Applicative] = Service.Spec[F](
       "db",
-      NonEmptyList.of(Container.Spec("postgres:9.5.4", Map("POSTGRES_DB" -> appTag.appName), Set(5432))),
+      NonEmptyList.of(Container.Spec("postgres:9.5.4", Map("POSTGRES_DB" -> appTag.appName), Set(5432), None)),
       constantReady[F]("postgres ready check")
     )
 
     def rabbitSpec[F[_]](implicit A: Applicative[F]) = Service.Spec[F](
       "rabbit",
-      NonEmptyList.of(Container.Spec("rabbitmq:3.6.10-management", Map.empty, Set(5672, 15672))),
+      NonEmptyList.of(Container.Spec("rabbitmq:3.6.10-management", Map.empty, Set(5672, 15672), None)),
       constantReady("rabbit ready check")
+    )
+
+    def ncSpec[F[_]](implicit A: Applicative[F]) = Service.Spec[F](
+      "netcat-service",
+      NonEmptyList.of(Container.Spec("subfuzion/netcat", Map.empty, Set(8080), Some(NonEmptyList.of("-l", "8080")))),
+      constantReady("netcat ready check")
     )
 
     def default[F[_]: Applicative] = TestData[F](
@@ -82,7 +88,6 @@ package object test {
       runner: Runner[F],
       runtimeInfo: Map[Service.Ref, Service.RuntimeInfo])(implicit I: ImpureEffect[F], F: Functor[F])
 
-  //TODO: return list of registered services instead than registry
   def withRunningServices[F[_]](deps: Dependencies[F])(testData: TestData[F])(runAssertion: TestEnv[F] => F[Assertion])(
       implicit appTag: AppTag,
       ec: ExecutionContext,

@@ -8,7 +8,7 @@ import com.spotify.docker.client.messages.{ContainerInfo, Container => JavaConta
 import scala.concurrent.ExecutionContext
 
 package object docker {
-  case class ContainerAndInfo(container: JavaContainer, info: ContainerInfo)
+  case class ContainerWithDetails(container: JavaContainer, info: ContainerInfo)
 
   def runner[F[_]](portRange: Range = InMemoryServiceRegistry.DefaultPortRange,
                    client: DefaultDockerClient = DefaultDockerClient.fromEnv().build())(services: Service.Spec[F]*)(
