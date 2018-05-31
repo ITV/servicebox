@@ -31,7 +31,8 @@ val baseSettings = Seq(
     "com.github.julien-truffaut" %%  "monocle-core"  % monocleVersion % "test",
     "com.github.julien-truffaut" %%  "monocle-macro" % monocleVersion % "test",
     "ch.qos.logback" % "logback-classic" % "1.2.3",
-    "com.typesafe.scala-logging" %% "scala-logging" % "3.8.0"
+    "com.typesafe.scala-logging" %% "scala-logging" % "3.8.0",
+    compilerPlugin("org.spire-math" %% "kind-projector" % "0.9.6")
   ))
 
 val artefactSettings = baseSettings ++ Seq(

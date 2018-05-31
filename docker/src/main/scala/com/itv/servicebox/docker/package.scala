@@ -25,7 +25,7 @@ package object docker {
     val serviceCtl =
       new ServiceController[F](logger, registry, containerCtl, scheduler)
 
-    new RunnerAlg[F](serviceCtl, registry)(services: _*)
+    new RunnerAlg[F](serviceCtl, registry, logger)(services: _*)
   }
 
 }

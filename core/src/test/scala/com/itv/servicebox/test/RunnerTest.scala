@@ -56,14 +56,46 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
       }
     }
 
-    "returns a list of registered services, preserving the order in which they are specified" in {
+    "returns the registered services" in {
       val testData = TestData.default[F]
       runServices(testData) { env =>
         for {
           registered <- env.runner.setUp
-
         } yield {
-          registered.toMap.keys.toList should ===(testData.services.map(_.ref))
+          registered.toMap.keySet should ===(testData.services.map(_.ref).toSet)
+        }
+      }
+    }
+
+    "allows to discover service dependencies by injecting env vars in containers" in {
+      //
+      //   RMQ -> PG -> NC
+      //
+      val nc  = TestData.ncSpec[F]
+      val pg  = TestData.postgresSpec[F].copy(dependsOn = Set(nc.ref))
+      val rmq = TestData.rabbitSpec[F].copy(dependsOn = Set(pg.ref))
+
+      runServices(
+        TestData
+          .default[F]
+          .copy(services = List(pg, rmq, nc))) { testEnv =>
+        for {
+          registered <- testEnv.runner.setUp
+        } yield {
+          val ncPort = nc.containers.head.internalPorts.head
+          val pgPort = pg.containers.head.internalPorts.head
+
+          val ncLocation = registered.unsafeLocationFor(nc.ref, ncPort)
+          val pgLocation = registered.unsafeLocationFor(pg.ref, pgPort)
+
+          val pgEnv  = registered.toMap(pg.ref).containers.head.env.toList
+          val rmqEnv = registered.toMap(rmq.ref).containers.head.env.toList
+
+          pgEnv should contain("NETCAT-SERVICE_HOST"              -> ncLocation.host)
+          pgEnv should contain("NETCAT-SERVICE_HOSTPORT_FOR_8080" -> ncLocation.port.toString)
+
+          rmqEnv should contain("DB_HOST"                  -> pgLocation.host)
+          rmqEnv should contain(s"DB_HOSTPORT_FOR_$pgPort" -> pgLocation.port.toString)
         }
       }
     }

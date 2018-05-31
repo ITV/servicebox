@@ -3,8 +3,9 @@ package com.itv.servicebox
 import cats.Show
 import cats.data.NonEmptyList
 import cats.syntax.either._
-import cats.syntax.foldable._
 import cats.syntax.show._
+import cats.syntax.foldable._
+import cats.instances.all._
 import scala.concurrent.duration.{Duration, FiniteDuration}
 import scala.concurrent.{Await, ExecutionContext, Future}
 
@@ -23,6 +24,7 @@ package object algebra {
     def imageName: String
     def ref(ref: Service.Ref): Container.Ref = Container.Ref(s"${ref.show}/$imageName")
     def env: Map[String, String]
+    def command: Option[NonEmptyList[String]]
   }
 
   object Container {
@@ -81,6 +83,7 @@ package object algebra {
     def ref(implicit tag: AppTag): Service.Ref = Service.Ref(s"${tag.show}/$name")
     def containers: NonEmptyList[C]
     def readyCheck: Service.ReadyCheck[F]
+    def dependsOn: Set[Service.Ref]
   }
 
   object Service {
@@ -92,8 +95,18 @@ package object algebra {
 
     case class RuntimeInfo(setupDuration: FiniteDuration, readyCheckDuration: FiniteDuration)
 
-    case class Spec[F[_]](name: String, containers: NonEmptyList[Container.Spec], readyCheck: ReadyCheck[F])
+    case class Spec[F[_]](name: String,
+                          containers: NonEmptyList[Container.Spec],
+                          readyCheck: ReadyCheck[F],
+                          dependsOn: Set[Service.Ref] = Set.empty)
         extends Service[F, Container.Spec] {
+
+      def dependsOn(spec: Service.Spec[F])(implicit tag: AppTag): Spec[F] =
+        copy(dependsOn = dependsOn + spec.ref)
+
+      def mergeToContainersEnv(extra: Map[String, String]): Spec[F] =
+        copy(containers = containers.map(c => c.copy(env = c.env ++ extra)))
+
       def register(mappings: ContainerMappings)(implicit tag: AppTag): Either[Throwable, Registered[F]] = {
         val containerList = containers.toList
         val diff          = containerList.map(_.ref(this.ref)).toSet diff mappings.keySet
@@ -114,7 +127,8 @@ package object algebra {
             Registered(name,
                        NonEmptyList.fromListUnsafe(cs),
                        Endpoints(NonEmptyList.fromListUnsafe(locations)),
-                       readyCheck)
+                       readyCheck,
+                       dependsOn)
           }
       }
     }
@@ -122,7 +136,8 @@ package object algebra {
     case class Registered[F[_]](name: String,
                                 containers: NonEmptyList[Container.Registered],
                                 endpoints: Endpoints,
-                                readyCheck: ReadyCheck[F])
+                                readyCheck: ReadyCheck[F],
+                                dependsOn: Set[Service.Ref])
         extends Service[F, Container.Registered] {
 
       def toSpec = Spec(name, containers.map(_.toSpec), readyCheck)
@@ -161,18 +176,40 @@ package object algebra {
     def +(registered: Service.Registered[F])(implicit tag: AppTag): ServicesByRef[F] =
       copy(toMap = toMap + (registered.ref -> registered))
 
+    private def refNotFound(ref: Service.Ref): Throwable =
+      new IllegalArgumentException(
+        s"Cannot find a service with ref: ${ref.show}. Registered services: ${toMap.keys.map(_.show).mkString(", ")}")
+
+    private def serviceFor(ref: Service.Ref): Either[Throwable, Service.Registered[F]] =
+      toMap.get(ref).toRight(refNotFound(ref))
+
     def locationFor(ref: Service.Ref, containerPort: Int): Either[Throwable, Location] =
       for {
-        service <- toMap
-          .get(ref)
-          .toRight(new IllegalArgumentException(
-            s"Cannot find a service with ref: ${ref.show}. Registered services: ${toMap.keys.map(_.show).mkString(", ")}"))
+        service  <- serviceFor(ref)
         location <- service.endpoints.locationFor(containerPort)
 
       } yield location
 
     def unsafeLocationFor(ref: Service.Ref, containerPort: Int): Location =
       locationFor(ref, containerPort).valueOr(throw _)
+
+    def envFor(serviceRef: Service.Ref): Either[Throwable, Map[String, String]] =
+      for {
+        service <- serviceFor(serviceRef)
+
+        containerRefPorts = service.containers.toList.flatMap(c =>
+          c.portMappings.toList.map { case (_, port) => c.ref -> port })
+
+        env <- containerRefPorts.foldMapM {
+          case (containerRef, containerPort) =>
+            service.endpoints.locationFor(containerPort).map { l =>
+              Map(
+                s"${service.name.toUpperCase}_HOST"                        -> s"${l.host}",
+                s"${service.name.toUpperCase}_HOSTPORT_FOR_$containerPort" -> s"${l.port}"
+              )
+            }
+        }
+      } yield env
   }
 
   //lawless typeclass to lift a value from a potentially impure effect
