@@ -70,7 +70,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
         for {
           registered <- env.runner.setUp
         } yield {
-          registered.toMap.keySet should ===(testData.services.map(_.ref).toSet)
+          registered.toMap.keySet should ===(testData.servicesByRef.keySet)
         }
       }
     }
@@ -205,7 +205,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
         } yield {
           runningContainers should have size 1
           runningContainers should !==(List(preExisting.container))
-          service.containers.map(_.toSpec) should ===(updatedData.services.head.containers)
+          service.containers.map(_.toSpec) should ===(serviceSpec.containers)
         }
       }
     }

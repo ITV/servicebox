@@ -52,9 +52,6 @@ package object test {
 
   case class RunningContainer(container: Container.Registered, serviceRef: Service.Ref)
 
-  //TODO: rewrite this as an ADT, allowing different setup behaviours
-  // - WithPreExisting(...)
-  // - Default(...)
   case class TestData[F[_]](portRange: Range,
                             servicesByRef: Map[Service.Ref, Service.Spec[F]],
                             preExisting: List[RunningContainer])(implicit A: Applicative[F]) {
@@ -64,7 +61,6 @@ package object test {
     //TODO: fix this mess!
     implicit val appTag: AppTag = TestData.appTag
 
-    //TODO: delete
     def services: List[Service.Spec[F]] = servicesByRef.values.toList
 
     def withSpecs(specs: Service.Spec[F]*): TestData[F] =
