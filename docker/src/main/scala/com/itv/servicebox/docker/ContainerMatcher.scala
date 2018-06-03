@@ -1,9 +1,10 @@
 package com.itv.servicebox.docker
 
-import com.itv.servicebox.algebra
-import com.itv.servicebox.algebra.Container
-import Container.Matcher
+import java.nio.file.Paths
+
 import cats.data.NonEmptyList
+import com.itv.servicebox.algebra.Container.Matcher
+import com.itv.servicebox.algebra.{BindMount, Container}
 import com.spotify.docker.client.messages.ContainerInfo
 
 import scala.annotation.tailrec
@@ -14,9 +15,22 @@ object ContainerMatcher extends Matcher[ContainerWithDetails] {
 
   override def apply(matched: ContainerWithDetails, expected: Container.Registered) = {
     val matcherResult = Matcher.Result(matched, expected)(_: Container.Registered)
-    val env           = containerEnvVars(matched.info, expected.env.keySet)
-    val entrypoint    = matched.info.config().entrypoint().asScala.toList
+    val env           = envVars(matched.info, expected.env.keySet)
 
+    val parsed = Container.Registered(expected.ref,
+                                      matched.container.image(),
+                                      env,
+                                      containerPortMappings(matched.info),
+                                      maybeCmd(matched, expected),
+                                      bindMounts(matched.info))
+
+    matcherResult(parsed)
+  }
+
+  private def maybeCmd(matched: ContainerWithDetails, expected: Container.Registered) = {
+    val entrypoint = matched.info.config.entrypoint.asScala.toList
+
+    @tailrec
     def removeEntrypoint(acc: List[String])(cmd: List[String], ep: List[String]): List[String] = (cmd, ep) match {
       case (Nil, _) => acc
       case (_, Nil) => acc ++ cmd
@@ -25,23 +39,20 @@ object ContainerMatcher extends Matcher[ContainerWithDetails] {
         else removeEntrypoint(acc :+ c)(ctail, etail)
     }
 
-    val maybeCmd =
-      if (expected.command.isEmpty) None
-      else
-        Option(matched.container.command).flatMap(cmd =>
-          NonEmptyList.fromList(removeEntrypoint(Nil)(cmd.split(' ').toList, entrypoint)))
-
-    val parsed = Container
-      .Registered(expected.ref, matched.container.image(), env, containerPortMappings(matched.info), maybeCmd)
-
-    matcherResult(parsed)
+    if (expected.command.isEmpty)
+      None
+    else
+      Option(matched.container.command).flatMap(cmd =>
+        NonEmptyList.fromList(removeEntrypoint(Nil)(cmd.split(' ').toList, entrypoint)))
   }
 
-  private def containerEnvVars(info: ContainerInfo, envVarsWhitelist: Set[String]): Map[String, String] =
-    info
-      .config()
-      .env()
-      .asScala
+  private def bindMounts(info: ContainerInfo): List[BindMount] =
+    info.mounts().asScala.toList.filter(_.`type` == "bind").map { bind =>
+      BindMount(Paths.get(bind.source), Paths.get(bind.destination), !bind.rw)
+    }
+
+  private def envVars(info: ContainerInfo, envVarsWhitelist: Set[String]): Map[String, String] =
+    info.config.env.asScala
       .flatMap {
         _.split("=").toList match {
           case k :: Nil =>
@@ -58,18 +69,13 @@ object ContainerMatcher extends Matcher[ContainerWithDetails] {
     import cats.instances.option._
     import cats.syntax.apply._
 
-    info
-      .networkSettings()
-      .ports()
-      .asScala
-      .flatMap {
-        case (port, binding) =>
-          val containerPort = Try {
-            port.takeWhile(_.isDigit).toInt
-          }.toOption
-          val hostPort = binding.asScala.headOption.map(_.hostPort().toInt)
-          (hostPort, containerPort).tupled
-      }
-      .toSet
+    info.networkSettings.ports.asScala.flatMap {
+      case (port, binding) =>
+        val containerPort = Try {
+          port.takeWhile(_.isDigit).toInt
+        }.toOption
+        val hostPort = binding.asScala.headOption.map(_.hostPort().toInt)
+        (hostPort, containerPort).tupled
+    }.toSet
   }
 }

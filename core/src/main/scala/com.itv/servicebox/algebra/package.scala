@@ -1,11 +1,16 @@
 package com.itv.servicebox
 
-import cats.data.NonEmptyList
+import java.nio.file.{Files, Path, Paths, StandardCopyOption}
+
+import cats.data.{NonEmptyList, StateT}
 import cats.instances.all._
 import cats.syntax.either._
+import cats.syntax.flatMap._
 import cats.syntax.foldable._
+import cats.syntax.functor._
 import cats.syntax.show._
-import cats.{ApplicativeError, Show}
+import cats.{ApplicativeError, FlatMap, Show}
+import monocle.function.all._
 
 import scala.concurrent.duration.{Duration, FiniteDuration}
 import scala.concurrent.{Await, ExecutionContext, Future}
@@ -22,11 +27,24 @@ package object algebra {
     implicit val appTagShow: Show[AppTag] = Show.show(tag => s"${tag.org}/${tag.appName}")
   }
 
+  case class BindMount(from: Path, to: Path, readOnly: Boolean = false)
+
+  object BindMount {
+    def fromResource[F[_]](resource: String, to: Path, ro: Boolean = false)(implicit I: ImpureEffect[F],
+                                                                            F: FlatMap[F]): F[BindMount] =
+      for {
+        input   <- I.lift(getClass.getResourceAsStream(resource))
+        tmpPath <- I.lift(Files.createTempFile(Paths.get(resource).getFileName.toString, "servicebox-bindmount"))
+        _       <- I.lift(Files.copy(input, tmpPath, StandardCopyOption.REPLACE_EXISTING))
+      } yield BindMount(tmpPath, to.toAbsolutePath, ro)
+  }
+
   private[algebra] sealed trait Container {
     def imageName: String
     def ref(ref: Service.Ref): Container.Ref = Container.Ref(s"${ref.show}/$imageName")
     def env: Map[String, String]
     def command: Option[NonEmptyList[String]]
+    def mounts: List[BindMount]
   }
 
   object Container {
@@ -38,16 +56,39 @@ package object algebra {
     case class Spec(imageName: String,
                     env: Map[String, String],
                     internalPorts: Set[Int],
-                    command: Option[NonEmptyList[String]] = None)
-        extends Container
+                    command: Option[NonEmptyList[String]],
+                    mounts: List[BindMount])
+        extends Container {
+
+      def withAbsolutePaths: Spec =
+        (L.mounts composeTraversal each composeLens L.mountFrom)
+          .modify(_.toAbsolutePath)(this)
+
+      def register(hostPortRange: Range, serviceRef: Service.Ref): Either[Throwable, Container.Registered] =
+        if (hostPortRange.size < internalPorts.size)
+          Left(
+            new IllegalArgumentException(
+              s"supplied port range is too small! $hostPortRange, internal ports: $internalPorts"))
+        else
+          Right(
+            Registered(
+              ref(serviceRef),
+              imageName,
+              env,
+              internalPorts.zip(hostPortRange).map(_.swap),
+              command,
+              mounts
+            ))
+    }
 
     case class Registered(ref: Container.Ref,
                           imageName: String,
                           env: Map[String, String],
                           portMappings: Set[PortMapping],
-                          command: Option[NonEmptyList[String]])
+                          command: Option[NonEmptyList[String]],
+                          mounts: List[BindMount])
         extends Container {
-      lazy val toSpec = Spec(imageName, env, portMappings.map(_._2), command)
+      lazy val toSpec = Spec(imageName, env, portMappings.map(_._2), command, mounts).withAbsolutePaths
     }
 
     trait Matcher[Repr] {
@@ -103,6 +144,8 @@ package object algebra {
                           dependencies: Set[Service.Ref] = Set.empty)
         extends Service[F, Container.Spec] {
 
+      def mapContainers(f: Container.Spec => Container.Spec): Spec[F] = copy(containers = containers.map(f))
+
       def dependsOn(ref: Service.Ref): Service.Spec[F] =
         L.dependsOn.modify(_ + ref)(this)
 
@@ -115,7 +158,7 @@ package object algebra {
         val registeredContainers = containerList.flatMap { c =>
           mappings
             .get(c.ref(ref))
-            .map(ms => Container.Registered(c.ref(ref), c.imageName, c.env, ms, c.command))
+            .map(ms => Container.Registered(c.ref(ref), c.imageName, c.env, ms, c.command, c.mounts))
         }
 
         registeredContainers

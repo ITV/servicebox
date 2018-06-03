@@ -65,7 +65,7 @@ class InMemoryServiceRegistry[F[_]](range: Range, logger: Logger[F])(implicit ta
       registeredContainers <- service.containers.toList.traverse[F, Container.Registered](c =>
         allocatePorts(c.internalPorts).map { portMapping =>
           val id = Container.Ref(s"${service.ref.value}/${c.imageName}")
-          Container.Registered(id, c.imageName, c.env, portMapping, c.command)
+          Container.Registered(id, c.imageName, c.env, portMapping, c.command, c.mounts)
       })
 
       err = ServiceRegistry.EmptyPortList(registeredContainers.map(_.ref))

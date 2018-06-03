@@ -1,5 +1,7 @@
 package com.itv.servicebox.algebra
 
+import java.nio.file.Path
+
 import cats.data.NonEmptyList
 import monocle.macros.GenLens
 
@@ -21,6 +23,11 @@ object Lenses {
 
   def containerEnv[F[_]]: Lens[Container.Spec, Map[String, String]] =
     GenLens[Container.Spec](_.env)
+
+  def mounts: Lens[Container.Spec, List[BindMount]] =
+    GenLens[Container.Spec](_.mounts)
+
+  def mountFrom: Lens[BindMount, Path] = GenLens[BindMount](_.from)
 
   def eachContainer[F[_]]: Traversal[Service.Spec[F], Container.Spec] = containers[F] composeTraversal each
 

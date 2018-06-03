@@ -1,6 +1,7 @@
 package com.itv.servicebox.test
 
 import java.net.{ServerSocket, Socket}
+import java.nio.file.Paths
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -9,6 +10,7 @@ import cats.data.NonEmptyList
 import cats.syntax.applicativeError._
 import cats.syntax.flatMap._
 import cats.syntax.functor._
+import cats.syntax.either._
 import com.itv.servicebox.algebra.Service.ReadyCheck
 import com.itv.servicebox.algebra._
 import org.scalactic.TypeCheckedTripleEquals
@@ -26,11 +28,43 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
   //TODO: cleanup appTag mess!
   def dependencies(implicit tag: AppTag): Dependencies[F]
 
+  //todo: move to test package
   def withServices(testData: TestData[F])(f: TestEnv[F] => F[Assertion])(implicit appTag: AppTag) =
     withRunningServices(dependencies)(testData)(f)
 
   def runServices(testData: TestData[F])(f: TestEnv[F] => F[Assertion])(implicit appTag: AppTag) =
     I.runSync(withServices(testData)(f))
+
+  def withRunningContainers(setupExisting: NonEmptyList[Container.Spec] => NonEmptyList[Container.Spec])(
+      spec: Service.Spec[F])(f: (TestEnv[F], List[Container.Registered]) => F[Assertion])(implicit appTag: AppTag) = {
+
+    import cats.data.StateT
+    import cats.Id
+
+    type PortAllocation[A] = StateT[Id, Range, A]
+
+    def assign(container: Container.Spec, serviceRef: Service.Ref): PortAllocation[Container.Registered] =
+      for {
+        range <- StateT.get[Id, Range]
+        registered = container.register(range, serviceRef).valueOr(throw _)
+        _ <- StateT.set[Id, Range](range.drop(container.internalPorts.size))
+      } yield registered
+
+    val (portRange, registered) = setupExisting(spec.containers).traverse(assign(_, spec.ref)).run(TestData.portRange)
+
+    val preExisting = registered.map {
+      RunningContainer(_, spec.ref)
+    }.toList
+
+    runServices(TestData(portRange, List(spec), preExisting)) { env =>
+      for {
+        _                 <- I.lift(Thread.sleep(10000))
+        service           <- env.serviceRegistry.unsafeLookup(spec)
+        runningContainers <- env.deps.containerController.runningContainers(service)
+        assertion         <- f(env, runningContainers)
+      } yield assertion
+    }
+  }
 
   def timed[A](f: F[A]): F[(A, FiniteDuration)] =
     for {
@@ -138,109 +172,62 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
       }
     }
     "matches running containers" in {
-      val testData      = TestData.default[F]
-      val serviceSpec   = testData.serviceAt(Specs.rmq.ref)
-      val containerSpec = serviceSpec.containers.head
-
-      val portsMapped = containerSpec.internalPorts.size
-
-      val mappings = containerSpec.internalPorts.zip(TestData.portRange.take(portsMapped)).map(_.swap)
-
-      val registered = Container.Registered(
-        containerSpec.ref(serviceSpec.ref),
-        containerSpec.imageName,
-        containerSpec.env,
-        mappings,
-        containerSpec.command
-      )
-
-      val preExisting = RunningContainer(registered, serviceSpec.ref)
-
-      runServices(
-        testData
-          .withPreExisting(preExisting)
-          .modifyPortRange(
-            _.drop(portsMapped)
-          )) { env =>
-        for {
-          service           <- env.serviceRegistry.unsafeLookup(serviceSpec)
-          runningContainers <- env.deps.containerController.runningContainers(service)
-        } yield {
-          service.containers.toList should ===(List(registered))
+      withRunningContainers(identity)(Specs.rmq) { (env, runningContainers) =>
+        I.lift {
           runningContainers should have size 1
-          runningContainers should ===(List(preExisting.container))
-          runningContainers should ===(service.containers.toList)
+          runningContainers should ===(env.preExisting.map(_.container))
         }
       }
     }
 
     "tears down containers that do not match the spec because of env changes" in {
-      val testData      = TestData(Specs.pg)
-      val serviceSpec   = Specs.pg
-      val containerSpec = serviceSpec.containers.head
+      val changeEnv: Container.Spec => Container.Spec =
+        _.copy(env = Map("POSTGRES_DB" -> "other-db"))
 
-      val portsMapped = containerSpec.internalPorts.size
-      val mappings    = containerSpec.internalPorts.zip(testData.portRange.take(portsMapped)).map(_.swap)
-
-      val runningPostgres = Container.Registered(
-        containerSpec.ref(serviceSpec.ref),
-        containerSpec.imageName,
-        Map("POSTGRES_DB" -> "other-db"),
-        mappings,
-        containerSpec.command
-      )
-
-      val preExisting =
-        RunningContainer(runningPostgres, serviceSpec.ref)
-
-      val updatedData =
-        TestData[F](serviceSpec)
-          .modifyPortRange(_.drop(portsMapped))
-          .withPreExisting(preExisting)
-
-      runServices(updatedData) { env =>
+      withRunningContainers(_.map(changeEnv))(Specs.pg) { (env, runningContainers) =>
         for {
-          service           <- env.serviceRegistry.unsafeLookup(serviceSpec)
-          runningContainers <- env.deps.containerController.runningContainers(service)
+          service <- env.serviceRegistry.unsafeLookup(Specs.pg)
         } yield {
           runningContainers should have size 1
-          runningContainers should !==(List(preExisting.container))
-          service.containers.map(_.toSpec) should ===(serviceSpec.containers)
+          runningContainers should !==(env.preExisting.map(_.container))
+          service.containers.map(_.toSpec) should ===(Specs.pg.containers)
         }
       }
     }
 
     "tears down containers that do not match the spec because of a command change" in {
-      val serviceSpec   = TestData.ncSpec[F]
-      val portRange     = TestData.portRange
-      val containerSpec = serviceSpec.containers.head
+      def setCommand(cmd: NonEmptyList[String])(c: Container.Spec): Container.Spec =
+        c.copy(command = Some(cmd))
 
-      val portsMapped = containerSpec.internalPorts.size
-      val mappings    = containerSpec.internalPorts.zip(portRange.take(portsMapped)).map(_.swap)
+      val cmd1 = NonEmptyList.of("-v", "-l", "8081")
 
-      val running = Container.Registered(
-        containerSpec.ref(serviceSpec.ref),
-        containerSpec.imageName,
-        containerSpec.env,
-        mappings,
-        Some(NonEmptyList.of("-v", "-l", "8080"))
-      )
-
-      val preExisting =
-        RunningContainer(running, serviceSpec.ref)
-
-      val data = TestData[F](serviceSpec)
-        .modifyPortRange(_.drop(portsMapped))
-        .withPreExisting(preExisting)
-
-      runServices(data) { env =>
+      withRunningContainers(_.map(setCommand(cmd1)))(Specs.nc) { (env, runningContainers) =>
         for {
-          service           <- env.serviceRegistry.unsafeLookup(serviceSpec)
-          runningContainers <- env.deps.containerController.runningContainers(service)
+          service <- env.serviceRegistry.unsafeLookup(Specs.nc)
         } yield {
           runningContainers should have size 1
-          runningContainers should !==(List(preExisting.container))
-          service.containers.map(_.toSpec) should ===(data.services.head.containers)
+          runningContainers should !==(env.preExisting.map(_.container))
+          service.containers.map(_.toSpec) should ===(Specs.nc.containers)
+        }
+      }
+    }
+
+    "tears down containers that do not match the spec because of bind mounts" in {
+      def bindMount(target: String) =
+        BindMount(Paths.get("core/src/test/scala/com/itv/servicebox/test/source.md"), Paths.get(target))
+
+      def setBindMounts(target: String)(c: Container.Spec): Container.Spec =
+        c.copy(mounts = List(bindMount(target)))
+
+      val spec = Specs.pg.mapContainers(setBindMounts("/target2.md"))
+
+      withRunningContainers(_.map(setBindMounts("/target1.md")))(spec) { (env, runningContainers) =>
+        for {
+          service <- env.serviceRegistry.unsafeLookup(spec)
+        } yield {
+          runningContainers should have size 1
+          runningContainers should !==(env.preExisting.map(_.container))
+          service.containers.map(_.toSpec) should ===(spec.containers.map(_.withAbsolutePaths))
         }
       }
     }
