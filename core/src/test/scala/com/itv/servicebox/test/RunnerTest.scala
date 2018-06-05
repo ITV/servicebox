@@ -19,7 +19,6 @@ import org.scalatest.{Assertion, FreeSpec, Matchers, Succeeded}
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, TimeoutException}
 import scala.util.{Success, Try}
-import Function.const
 
 abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, Throwable], I: ImpureEffect[F])
     extends FreeSpec
@@ -234,7 +233,8 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
 
     "raises an error if the unallocated port range cannot fit the ports in the spec" in {
       I.runSync(withServices(TestData.default[F].modifyPortRange(_.take(1))) {
-          const(M.pure(Succeeded))
+          case _ =>
+            M.pure(Succeeded)
         }.attempt)
         .isLeft should ===(true)
     }
@@ -248,7 +248,8 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
         ServiceRegistry.EmptyPortList(containerRefs)
 
       I.runSync(withServices(testData.withSpecs(spec)) {
-          const(M.pure(Succeeded))
+          case _ =>
+            M.pure(Succeeded)
         }.attempt)
         .left
         .get should ===(expected)
@@ -269,7 +270,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
       val (result, elapsedTime) = I.runSync(
         timed {
           withServices(testData.withSpecs(rabbitSpec)) {
-            const(M.pure(fail("this should time out!")))
+            case _ => M.pure(fail("this should time out!"))
           }.attempt
         }
       )

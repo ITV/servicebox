@@ -25,8 +25,7 @@ class Runner[F[_]](ctrl: ServiceController[F], registry: ServiceRegistry[F])(ser
 
   def setUp(implicit ec: ExecutionContext): F[ServicesByRef[F]] =
     for {
-      services <- servicesInReverseTopologicalOrder
-      //TODO: add monoidK instance
+      services   <- servicesInReverseTopologicalOrder
       registered <- services.foldM(ServicesByRef.empty[F])((acc, spec) => setUp(spec, acc).map(acc + _))
     } yield registered
 
