@@ -1,6 +1,7 @@
 package com.itv.servicebox
 
 import java.nio.file.{Files, Path, Paths, StandardCopyOption}
+import java.util.concurrent.atomic.AtomicReference
 
 import cats.data.{NonEmptyList, StateT}
 import cats.instances.all._
@@ -21,6 +22,8 @@ package object algebra {
   type PortMapping = (Int, Int)
 
   type ContainerMappings = Map[Container.Ref, Set[PortMapping]]
+
+  type PortAllocation[F[_], A] = StateT[F, AtomicReference[Range], A]
 
   case class AppTag(org: String, appName: String)
   object AppTag {
@@ -64,7 +67,7 @@ package object algebra {
         (L.mounts composeTraversal each composeLens L.mountFrom)
           .modify(_.toAbsolutePath)(this)
 
-      def register(hostPortRange: Range, serviceRef: Service.Ref): Either[Throwable, Container.Registered] =
+      def register(hostPortRange: Seq[Int], serviceRef: Service.Ref): Either[Throwable, Container.Registered] =
         if (hostPortRange.size < internalPorts.size)
           Left(
             new IllegalArgumentException(

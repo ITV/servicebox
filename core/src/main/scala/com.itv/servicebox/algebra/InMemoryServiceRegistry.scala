@@ -3,16 +3,13 @@ package com.itv.servicebox.algebra
 import java.net.Socket
 import java.util.concurrent.atomic.AtomicReference
 
-import cats.MonadError
-import cats.data.NonEmptyList
+import cats.{Applicative, MonadError}
+import cats.data.{NonEmptyList, StateT}
 import cats.instances.list._
 import cats.instances.map._
 import cats.instances.set._
-import cats.syntax.flatMap._
-import cats.syntax.foldable._
-import cats.syntax.functor._
-import cats.syntax.show._
-import cats.syntax.traverse._
+import cats.instances.stream._
+import cats.syntax.all._
 
 import scala.util.Try
 
@@ -28,28 +25,34 @@ class InMemoryServiceRegistry[F[_]](range: Range, logger: Logger[F])(implicit ta
   private val registry  = new AtomicReference[Map[Service.Ref, ContainerMappings]](Map.empty)
   private val portRange = new AtomicReference[Range](range)
 
-  private def allocatePorts(containerPorts: Set[Int]): F[Set[PortMapping]] = {
-    val cannotAllocateErr = new IllegalStateException(
-      s"cannot allocate ${containerPorts.size} port/s within range: $range")
+  private val getRange: PortAllocation[F, Range] =
+    StateT.get[F, AtomicReference[Range]].map(_.get())
 
-    //TODO: make this stack safe?
-    def allocateNext(toAllocate: List[Int]): F[List[PortMapping]] = toAllocate match {
-      case Nil => M.pure(Nil)
-      case guestPort :: rest =>
-        for {
-          next <- I.lift(portRange.get()).map(_.headOption)
-          mapping <- next.fold(M.raiseError[List[PortMapping]](cannotAllocateErr)) { hostPort =>
-            checkPort(hostPort).flatMap(
-              isAvailable =>
-                I.lift(portRange.getAndUpdate(_.drop(1)))
-                  .as(if (isAvailable) List(hostPort -> guestPort) else Nil))
-          }
-          moreMappings <- if (mapping.isEmpty) allocateNext(toAllocate) else allocateNext(rest)
-        } yield mapping ++ moreMappings
+  private def dropFromRange(n: Int)(implicit A: Applicative[F]): PortAllocation[F, Unit] =
+    StateT.modifyF[F, AtomicReference[Range]] { ref =>
+      I.lift(ref.getAndUpdate(_.drop(n))) *> A.pure(ref)
     }
 
-    allocateNext(containerPorts.toList).map(_.toSet)
-  }
+  private def lift[F[_]: Applicative, A](fa: F[A]): PortAllocation[F, A] =
+    StateT.liftF[F, AtomicReference[Range], A](fa)
+
+  private def allocate(container: Container.Spec, serviceRef: Service.Ref)(
+      implicit A: Applicative[F]): PortAllocation[F, Container.Registered] =
+    for {
+      range <- getRange
+      _     <- lift(logger.debug(s"current port range: $range"))
+      attemptedPorts <- lift(range.toStream.foldM(List.empty[Option[Int]]) {
+        case (acc, port) =>
+          if (acc.flatten.size == container.internalPorts.size)
+            A.pure(acc)
+          else
+            checkPort(port).map(isAvailable => acc :+ Some(port).filter(_ => isAvailable))
+      })
+
+      _          <- lift(logger.debug(s"attempted ports: $attemptedPorts"))
+      registered <- lift(M.fromEither(container.register(attemptedPorts.flatten, serviceRef)))
+      _          <- dropFromRange(attemptedPorts.size)
+    } yield registered
 
   private def checkPort(port: Int): F[Boolean] = I.lift {
     Try {
@@ -57,16 +60,11 @@ class InMemoryServiceRegistry[F[_]](range: Range, logger: Logger[F])(implicit ta
     }.toOption.isEmpty
   }
 
-  protected def portsBound(ports: Set[Int]): F[Set[Int]] =
-    ports.toList.foldMapM(p => checkPort(p).map(isAvailable => if (isAvailable) Set.empty else Set(p)))
-
   override def register(service: Service.Spec[F]) =
     for {
-      registeredContainers <- service.containers.toList.traverse[F, Container.Registered](c =>
-        allocatePorts(c.internalPorts).map { portMapping =>
-          val id = Container.Ref(s"${service.ref.value}/${c.imageName}")
-          Container.Registered(id, c.imageName, c.env, portMapping, c.command, c.mounts)
-      })
+      registeredContainers <- service.containers.toList
+        .traverse[PortAllocation[F, ?], Container.Registered](c => allocate(c, service.ref))
+        .runA(portRange)
 
       err = ServiceRegistry.EmptyPortList(registeredContainers.map(_.ref))
 
@@ -90,7 +88,7 @@ class InMemoryServiceRegistry[F[_]](range: Range, logger: Logger[F])(implicit ta
       portMappings = rs.containers.foldMap(c => Map(c.ref -> c.portMappings))
 
       _ <- logger.debug(s"registering containers with port ranges:\n\t$summary")
-      _ = registry.getAndUpdate(_.updated(rs.ref, portMappings))
+      _ <- I.lift(registry.getAndUpdate(_.updated(rs.ref, portMappings)))
 
     } yield rs
 

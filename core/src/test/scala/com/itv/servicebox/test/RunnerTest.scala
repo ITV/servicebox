@@ -19,6 +19,7 @@ import org.scalatest.{Assertion, FreeSpec, Matchers, Succeeded}
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, TimeoutException}
 import scala.util.{Success, Try}
+import Function.const
 
 abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, Throwable], I: ImpureEffect[F])
     extends FreeSpec
@@ -28,7 +29,6 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
   //TODO: cleanup appTag mess!
   def dependencies(implicit tag: AppTag): Dependencies[F]
 
-  //todo: move to test package
   def withServices(testData: TestData[F])(f: TestEnv[F] => F[Assertion])(implicit appTag: AppTag) =
     withRunningServices(dependencies)(testData)(f)
 
@@ -214,7 +214,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
 
     "tears down containers that do not match the spec because of bind mounts" in {
       def bindMount(target: String) =
-        BindMount(Paths.get("core/src/test/scala/com/itv/servicebox/test/source.md"), Paths.get(target))
+        BindMount(Paths.get("core/src/test/scala/com/itv/servicebox/test/resource.txt"), Paths.get(target))
 
       def setBindMounts(target: String)(c: Container.Spec): Container.Spec =
         c.copy(mounts = List(bindMount(target)))
@@ -234,8 +234,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
 
     "raises an error if the unallocated port range cannot fit the ports in the spec" in {
       I.runSync(withServices(TestData.default[F].modifyPortRange(_.take(1))) {
-          case _ =>
-            M.pure(Succeeded)
+          const(M.pure(Succeeded))
         }.attempt)
         .isLeft should ===(true)
     }
@@ -249,8 +248,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
         ServiceRegistry.EmptyPortList(containerRefs)
 
       I.runSync(withServices(testData.withSpecs(spec)) {
-          case _ =>
-            M.pure(Succeeded)
+          const(M.pure(Succeeded))
         }.attempt)
         .left
         .get should ===(expected)
@@ -271,7 +269,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
       val (result, elapsedTime) = I.runSync(
         timed {
           withServices(testData.withSpecs(rabbitSpec)) {
-            case _ => M.pure(fail("this should time out!"))
+            const(M.pure(fail("this should time out!")))
           }.attempt
         }
       )
