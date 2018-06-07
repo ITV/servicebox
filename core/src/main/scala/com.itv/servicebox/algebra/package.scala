@@ -1,16 +1,13 @@
 package com.itv.servicebox
 
-import java.nio.file.{Files, Path, Paths, StandardCopyOption}
+import java.nio.file.{Files, Path}
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicReference
 
 import cats.data.{NonEmptyList, StateT}
 import cats.instances.all._
-import cats.syntax.either._
-import cats.syntax.flatMap._
-import cats.syntax.foldable._
-import cats.syntax.functor._
-import cats.syntax.show._
-import cats.{ApplicativeError, FlatMap, Show}
+import cats.syntax.all._
+import cats.{ApplicativeError, Monad, Show}
 import monocle.function.all._
 
 import scala.concurrent.duration.{Duration, FiniteDuration}
@@ -33,13 +30,25 @@ package object algebra {
   case class BindMount(from: Path, to: Path, readOnly: Boolean = false)
 
   object BindMount {
-    def fromResource[F[_]](resource: String, to: Path, ro: Boolean = false)(implicit I: ImpureEffect[F],
-                                                                            F: FlatMap[F]): F[BindMount] =
+    def fromTmpFileContent[F[_]](baseDir: Path)(to: Path, ro: Boolean = false)(
+        files: (String, Array[Byte])*)(implicit I: ImpureEffect[F], M: Monad[F]): F[BindMount] = {
+
+      val mountDir = baseDir.resolve(UUID.randomUUID().toString)
+
       for {
-        input   <- I.lift(getClass.getResourceAsStream(resource))
-        tmpPath <- I.lift(Files.createTempFile(Paths.get(resource).getFileName.toString, "servicebox-bindmount"))
-        _       <- I.lift(Files.copy(input, tmpPath, StandardCopyOption.REPLACE_EXISTING))
-      } yield BindMount(tmpPath, to.toAbsolutePath, ro)
+
+        _ <- I
+          .lift(baseDir.toFile.exists())
+          .ifM(I.lift(()), I.lift(Files.createDirectory(baseDir)).void)
+
+        _ <- I.lift(Files.createDirectory(mountDir))
+
+        _ <- files.toList.traverse_ {
+          case (fileName, content) =>
+            I.lift(Files.write(mountDir.resolve(fileName), content))
+        }
+      } yield BindMount(mountDir, to, ro)
+    }
   }
 
   private[algebra] sealed trait Container {
