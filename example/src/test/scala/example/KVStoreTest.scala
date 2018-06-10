@@ -54,7 +54,7 @@ class KVStoreTest extends FlatSpec with Matchers with BeforeAndAfterAll {
           new IllegalArgumentException(s"bad InfluxDB query: ${res.getError}")
 
         for {
-          endpoint <- endpoints.unsafeLocationFor[IO](httpPort)
+          endpoint <- endpoints.locationFor[IO](httpPort)
 
           config = baseInfluxConfig.copy(host = endpoint.host, port = endpoint.port)
           client = InfluxDBFactory.connect(config.toUrl, config.user, config.password)

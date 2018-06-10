@@ -5,7 +5,10 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicReference
 
 import cats.data.{NonEmptyList, StateT}
-import cats.instances.all._
+import cats.instances.list._
+import cats.instances.map._
+import cats.instances.string._
+import cats.instances.either._
 import cats.syntax.all._
 import cats.{ApplicativeError, Monad, Show}
 import monocle.function.all._
@@ -213,7 +216,7 @@ package object algebra {
   case class Endpoints(toNel: NonEmptyList[Location]) {
     val toList: List[Location] = toNel.toList
 
-    def locationFor(containerPort: Int): Either[Throwable, Location] = {
+    def attemptLocationFor(containerPort: Int): Either[Throwable, Location] = {
       val portMappings = toNel.map(l => s"${l.port} -> ${l.containerPort}").toList.mkString(", ")
       toNel
         .find(_.containerPort == containerPort)
@@ -221,8 +224,8 @@ package object algebra {
           s"Cannot find a location for $containerPort. Existing port mappings: $portMappings"))
     }
 
-    def unsafeLocationFor[F[_]](containerPort: Int)(implicit A: ApplicativeError[F, Throwable]): F[Location] =
-      A.fromEither(locationFor(containerPort))
+    def locationFor[F[_]](containerPort: Int)(implicit A: ApplicativeError[F, Throwable]): F[Location] =
+      A.fromEither(attemptLocationFor(containerPort))
   }
 
   object ServicesByRef {
@@ -244,7 +247,7 @@ package object algebra {
       toMap.get(ref).toRight(refNotFound(ref))
 
     def locationFor(ref: Service.Ref, containerPort: Int): F[Location] =
-      A.fromEither(serviceFor(ref).flatMap(_.endpoints.locationFor(containerPort)))
+      A.fromEither(serviceFor(ref).flatMap(_.endpoints.attemptLocationFor(containerPort)))
 
     def envFor(serviceRef: Service.Ref): F[Map[String, String]] =
       A.fromEither(for {
@@ -255,7 +258,7 @@ package object algebra {
 
         env <- containerRefPorts.foldMapM {
           case (containerRef, containerPort) =>
-            service.endpoints.locationFor(containerPort).map { l =>
+            service.endpoints.attemptLocationFor(containerPort).map { l =>
               Map(
                 s"${service.name.toUpperCase}_HOST"                        -> s"${l.host}",
                 s"${service.name.toUpperCase}_HOSTPORT_FOR_$containerPort" -> s"${l.port}"
