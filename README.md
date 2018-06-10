@@ -1,18 +1,18 @@
 # Service box
 
-A type safe library to define and run test dependencies using scala and Docker containers.
+A library to define and run test dependencies using scala and Docker containers.
 
 ## Containers and integration testing
 
-Scala's strong type system, when used properly, can help avoiding a range of otherwise common bugs, 
-often removing the need for pedantic, low-level unit testing. However, we still find highly valuable testing the integration of several software 
-components. It is in fact at this level that we spot most errors (e.g. serialisation/deserialisation, 
-missing configuration values, SQL queries working differently across different database vendors, race conditions, etc.).
+Scala's powerful type system can help avoiding a range of otherwise common bugs, 
+removing the need for pedantic, low-level unit testing. However, testing 
+how the various components integrate into a larger system is still necessary. It is in fact at this higher level that errors are 
+typically discovered (e.g. serialisation/deserialisation, missing configuration values, SQL queries working differently 
+across different database vendors, etc.).
 
-Recently, we have started using Docker to streamline the way we run this type of tests, both on
-our development machines and on our continuous integration environment. 
-By allowing us to reproduce a realistic production environment with great flexibility and speed, containers
-help increase confidence in our testing and continuous integration process.
+Servicebox allows to define external dependencies in idiomatic scala, managing their lifecycle and execution within 
+Docker containers. The main goal is to support developers in writing effective and reliable integration tests, by making
+easier to setup a CI/CD environment that closely resembles the production one.
 
 ### Status
 
@@ -78,7 +78,9 @@ object Postgres {
       NonEmptyList.of(
         Container.Spec("postgres:9.5.4",
                        Map("POSTGRES_DB" -> config.dbName, "POSTGRES_PASSWORD" -> config.password),
-                       Set(5432))),
+                       Set(5432),
+                       None,
+                       List.empty)),
       Service.ReadyCheck[IO](dbConnect, 50.millis, 5.seconds)
     )
   }
@@ -101,7 +103,7 @@ scala> val config = Postgres.DbConfig("localhost", "user", "pass", 5432)
 config: Postgres.DbConfig = DbConfig(localhost,user,pass,5432)
 
 scala> val postgresSpec = Postgres(config)
-postgresSpec: com.itv.servicebox.algebra.Service.Spec[cats.effect.IO] = Spec(Postgres,NonEmptyList(Spec(postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),Set(5432))),ReadyCheck(Postgres$$$Lambda$6067/213047182@4faa823d,50 milliseconds,5 seconds,None))
+postgresSpec: com.itv.servicebox.algebra.Service.Spec[cats.effect.IO] = Spec(Postgres,NonEmptyList(Spec(postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),Set(5432),None,List())),ReadyCheck(Postgres$$$Lambda$11585/705689151@21b155bf,50 milliseconds,5 seconds,None),Set())
 
 scala> //evaluate only once to prevent shutdown hook to be fired multiple times
      | lazy val runner = {
@@ -119,14 +121,14 @@ defined in the spec, and a `setUp`:
 
 ```scala
 scala> val registeredServices = runner.setUp.unsafeRunSync
-registeredServices: com.itv.servicebox.algebra.ServicesByRef[cats.effect.IO] = ServicesByRef(Map(Ref(com.example/some-app/Postgres) -> Registered(Postgres,NonEmptyList(Registered(Ref(com.example/some-app/Postgres/postgres:9.5.4),postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),Set((49162,5432)))),Endpoints(NonEmptyList(Location(127.0.0.1,49162,5432))),ReadyCheck(Postgres$$$Lambda$6067/213047182@4faa823d,50 milliseconds,5 seconds,None))))
+registeredServices: com.itv.servicebox.algebra.ServicesByRef[cats.effect.IO] = ServicesByRef(Map(Ref(com.example/some-app/Postgres) -> Registered(Postgres,NonEmptyList(Registered(Ref(com.example/some-app/Postgres/postgres:9.5.4),postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),Set((49162,5432)),None,List())),Endpoints(NonEmptyList(Location(127.0.0.1,49162,5432))),ReadyCheck(Postgres$$$Lambda$11585/705689151@21b155bf,50 milliseconds,5 seconds,None),Set())))
 ```
 
 This returns us a wrapper of a `Map[Service.Ref, Service.Registered[F]]`
 providing us with some convenience methods to resolve running services/containers:
 
 ```scala
-scala> val pgLocation = registeredServices.unsafeLocationFor(postgresSpec.ref, 5432)
+scala> val pgLocation = registeredServices.locationFor(postgresSpec.ref, 5432).unsafeRunSync
 pgLocation: com.itv.servicebox.algebra.Location = Location(127.0.0.1,49162,5432)
 ```
 
