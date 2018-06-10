@@ -1,12 +1,11 @@
 package com.itv.servicebox
 
-import java.util.concurrent.TimeUnit
-
 import cats.data.NonEmptyList
-import cats.{Applicative, FlatMap, Functor, MonadError}
+import cats.{Applicative, Functor, MonadError}
 import com.itv.servicebox.algebra.{ImpureEffect, InMemoryServiceRegistry, _}
 import org.scalatest.Assertion
 import org.scalatest.Matchers._
+import cats.syntax.show._
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
@@ -21,49 +20,64 @@ package object test {
 
     def postgresSpec[F[_]: Applicative] = Service.Spec[F](
       "db",
-      NonEmptyList.of(Container.Spec("postgres:9.5.4", Map("POSTGRES_DB" -> appTag.appName), Set(5432), None)),
+      NonEmptyList.of(Container.Spec("postgres:9.5.4", Map("POSTGRES_DB" -> appTag.appName), Set(5432), None, Nil)),
       constantReady[F]("postgres ready check")
     )
 
     def rabbitSpec[F[_]](implicit A: Applicative[F]) = Service.Spec[F](
       "rabbit",
-      NonEmptyList.of(Container.Spec("rabbitmq:3.6.10-management", Map.empty, Set(5672, 15672), None)),
+      NonEmptyList.of(Container.Spec("rabbitmq:3.6.10-management", Map.empty, Set(5672, 15672), None, Nil)),
       constantReady("rabbit ready check")
     )
 
     def ncSpec[F[_]](implicit A: Applicative[F]) = Service.Spec[F](
       "netcat-service",
-      NonEmptyList.of(Container.Spec("subfuzion/netcat", Map.empty, Set(8080), Some(NonEmptyList.of("-l", "8080")))),
+      NonEmptyList.of(
+        Container.Spec("subfuzion/netcat", Map.empty, Set(8080), Some(NonEmptyList.of("-l", "8080")), Nil)),
       constantReady("netcat ready check")
     )
 
     def default[F[_]: Applicative] = TestData[F](
       portRange,
-      List(postgresSpec[F], rabbitSpec[F]),
+      List(postgresSpec[F], rabbitSpec[F]).map(s => s.ref -> s).toMap,
       Nil
     )
+
+    def apply[F[_]](spec: Service.Spec[F]*)(implicit A: Applicative[F]): TestData[F] =
+      new TestData(portRange, spec.map(s => s.ref -> s).toMap, Nil)
+
+    def apply[F[_]](portRange: Range, specs: List[Service.Spec[F]], preExisting: List[RunningContainer])(
+        implicit A: Applicative[F]): TestData[F] =
+      TestData(portRange, specs.map(s => s.ref -> s).toMap, preExisting)
   }
 
   case class RunningContainer(container: Container.Registered, serviceRef: Service.Ref)
 
-  //TODO: rewrite this as an ADT, allowing different setup behaviours
-  // - WithPreExisting(...)
-  // - Default(...)
-  case class TestData[F[_]](portRange: Range, services: List[Service.Spec[F]], preExisting: List[RunningContainer])(
-      implicit A: Applicative[F]) {
+  case class TestData[F[_]](portRange: Range,
+                            servicesByRef: Map[Service.Ref, Service.Spec[F]],
+                            preExisting: List[RunningContainer])(implicit A: Applicative[F]) {
+    private val AL = algebra.Lenses
+    private val TL = test.Lenses
 
-    def postgresSpec =
-      services
-        .find(_.name == TestData.postgresSpec[F].name)
-        .getOrElse(fail(s"Undefined service spec ${TestData.postgresSpec.name}"))
+    //TODO: fix this mess!
+    implicit val appTag: AppTag = TestData.appTag
 
-    def rabbitSpec =
-      services
-        .find(_.name == TestData.rabbitSpec[F].name)
-        .getOrElse(fail(s"Undefined service spec ${TestData.rabbitSpec.name}"))
+    def services: List[Service.Spec[F]] = servicesByRef.values.toList
 
-    def withPostgresOnly = copy(services = List(postgresSpec))
-    def withRabbitOnly   = copy(services = List(rabbitSpec))
+    def withSpecs(specs: Service.Spec[F]*): TestData[F] =
+      TL.services.set(specs.map(s => s.ref -> s).toMap)(this)
+
+    def withPreExisting(containers: RunningContainer*): TestData[F] =
+      TL.preExisting.set(containers.toList)(this)
+
+    def modifyPortRange(f: Range => Range): TestData[F] =
+      TL.portRange.modify(f)(this)
+
+    def serviceAt(serviceRef: Service.Ref): Service.Spec[F] =
+      TL.serviceAt(serviceRef)
+        .getOption(this)
+        .getOrElse(fail(s"cannot find service ${serviceRef.show} in $this"))
+
   }
 
   class Dependencies[F[_]](
@@ -82,11 +96,11 @@ package object test {
       new Runner[F](ctrl, registry)(services: _*)
   }
 
-  case class TestEnv[F[_]](
-      deps: Dependencies[F],
-      serviceRegistry: ServiceRegistry[F],
-      runner: Runner[F],
-      runtimeInfo: Map[Service.Ref, Service.RuntimeInfo])(implicit I: ImpureEffect[F], F: Functor[F])
+  case class TestEnv[F[_]](deps: Dependencies[F],
+                           serviceRegistry: ServiceRegistry[F],
+                           runner: Runner[F],
+                           runtimeInfo: Map[Service.Ref, Service.RuntimeInfo],
+                           preExisting: List[RunningContainer])(implicit I: ImpureEffect[F], F: Functor[F])
 
   def withRunningServices[F[_]](deps: Dependencies[F])(testData: TestData[F])(runAssertion: TestEnv[F] => F[Assertion])(
       implicit appTag: AppTag,
@@ -99,9 +113,9 @@ package object test {
     val runner          = deps.runner(controller, serviceRegistry, testData.services)
 
     import cats.instances.list._
+    import cats.syntax.flatMap._
     import cats.syntax.foldable._
     import cats.syntax.functor._
-    import cats.syntax.flatMap._
 
     //Note: we use foldM and not traverse here to avoid parallel execution
     // (which happens in the case of the default cats instance of `Traverse[Future]`)
@@ -111,7 +125,7 @@ package object test {
 
     setupRunningContainers >> runner.setupWithRuntimeInfo >>= { x =>
       val runtimeInfo = x.map { case (registered, info) => registered.ref -> info }.toMap
-      runAssertion(TestEnv[F](deps, serviceRegistry, runner, runtimeInfo))
+      runAssertion(TestEnv[F](deps, serviceRegistry, runner, runtimeInfo, testData.preExisting))
     }
   }
 }

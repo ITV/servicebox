@@ -20,7 +20,6 @@ package object interpreter {
     override def retry[A](f: () => IO[A], checkTimeout: FiniteDuration, totalTimeout: FiniteDuration, label: String)(
         implicit ec: ExecutionContext): IO[A] = {
 
-      //TODO: move to signature
       val timer = implicitly[Timer[IO]]
       import cats.syntax.flatMap._
 

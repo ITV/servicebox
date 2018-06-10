@@ -16,6 +16,7 @@ import cats.syntax.show._
 import cats.instances.list._
 import cats.syntax.traverse._
 import cats.syntax.option._
+import com.spotify.docker.client.messages.HostConfig.Bind
 
 object DockerContainerController {
   private[docker] val AppTagLabel       = "com.itv.app-ref"
@@ -84,22 +85,33 @@ class DockerContainerController[F[_]](dockerClient: DefaultDockerClient, logger:
       .getOrElse(Map.empty)
 
   private def containerConfig(serviceRef: Service.Ref, container: Container.Registered): ContainerConfig = {
-    val bindings = (mutable.Map.empty[Int, Int] ++ container.portMappings).map {
+    val pbs = (mutable.Map.empty[Int, Int] ++ container.portMappings).map {
       case (hostPort, containerPort) =>
         //TODO: introduce a more granular mechanism to control whether to bind UDP/TCP ports
         s"$containerPort/tcp" -> List(PortBinding.of("0.0.0.0", hostPort.toString)).asJava
     }.asJava
 
-    val hostConfig = HostConfig.builder().portBindings(bindings).build()
-    val labels     = mutable.Map.empty[String, String] ++ containerLabels(serviceRef, container.ref.some)
+    val bindMounts = container.mounts.map { mb =>
+      Bind.builder().from(mb.from.toAbsolutePath.toString).to(mb.to.toAbsolutePath.toString).build()
+    }
 
-    val config = ContainerConfig
-      .builder()
-      .labels(labels.asJava)
-      .env(container.env.map { case (k, v) => s"$k=$v" }.toList.asJava)
-      .hostConfig(hostConfig)
-      .exposedPorts(bindings.keySet())
-      .image(container.imageName)
+    val labels = mutable.Map.empty[String, String] ++ containerLabels(serviceRef, container.ref.some)
+
+    val hostConfig =
+      HostConfig
+        .builder()
+        .portBindings(pbs)
+        .appendBinds(bindMounts: _*)
+        .build()
+
+    val config =
+      ContainerConfig
+        .builder()
+        .labels(labels.asJava)
+        .env(container.env.map { case (k, v) => s"$k=$v" }.toList.asJava)
+        .hostConfig(hostConfig)
+        .exposedPorts(pbs.keySet())
+        .image(container.imageName)
 
     container.command.fold(config)(nel => config.cmd(nel.toList.asJava)).build()
   }

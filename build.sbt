@@ -1,7 +1,7 @@
 import sbt.Keys.publishArtifact
 import ReleaseTransformations._
 
-val monocleVersion = "1.5.0"
+val monocleVersion = "1.5.1-cats"
 val doobieVersion = "0.5.2"
 val influxDbVersion = "2.9"
 
@@ -28,10 +28,11 @@ val baseSettings = Seq(
   libraryDependencies ++= Seq(
     "org.typelevel" %% "cats-core" % "1.1.0",
     "org.scalatest" %% "scalatest" % "3.0.4" % "test",
-    "com.github.julien-truffaut" %%  "monocle-core"  % monocleVersion % "test",
-    "com.github.julien-truffaut" %%  "monocle-macro" % monocleVersion % "test",
+    "com.github.julien-truffaut" %%  "monocle-core"  % monocleVersion,
+    "com.github.julien-truffaut" %%  "monocle-macro" % monocleVersion,
     "ch.qos.logback" % "logback-classic" % "1.2.3",
-    "com.typesafe.scala-logging" %% "scala-logging" % "3.8.0"
+    "com.typesafe.scala-logging" %% "scala-logging" % "3.8.0",
+    compilerPlugin("org.spire-math" %% "kind-projector" % "0.9.6")
   ))
 
 val artefactSettings = baseSettings ++ Seq(
