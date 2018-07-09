@@ -40,7 +40,7 @@ class KVStoreTest extends FlatSpec with Matchers with BeforeAndAfterAll {
                              "POSTGRES_PASSWORD" -> basePostgresConfig.password),
                          Set(port),
                          None,
-                         Nil)),
+                         None)),
         Service.ReadyCheck[IO](dbConnect, 10.millis, 30.seconds)
       )
     }
@@ -78,7 +78,7 @@ class KVStoreTest extends FlatSpec with Matchers with BeforeAndAfterAll {
                 "INFLUXDB_USER_PASSWORD" -> baseInfluxConfig.password),
             Set(httpPort, udpPort),
             None,
-            Nil
+            None
           )
         ),
         Service.ReadyCheck(pingAndInit, 5.seconds, 3.minutes)

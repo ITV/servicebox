@@ -91,7 +91,7 @@ class DockerContainerController[F[_]](dockerClient: DefaultDockerClient, logger:
         s"$containerPort/tcp" -> List(PortBinding.of("0.0.0.0", hostPort.toString)).asJava
     }.asJava
 
-    val bindMounts = container.mounts.map { mb =>
+    val bindMounts = container.mounts.fold(List.empty[BindMount])(_.toList).map { mb =>
       Bind.builder().from(mb.from.toAbsolutePath.toString).to(mb.to.toAbsolutePath.toString).build()
     }
 

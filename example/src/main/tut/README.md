@@ -80,7 +80,7 @@ object Postgres {
                        Map("POSTGRES_DB" -> config.dbName, "POSTGRES_PASSWORD" -> config.password),
                        Set(5432),
                        None,
-                       List.empty)),
+                       None)),
       Service.ReadyCheck[IO](dbConnect, 50.millis, 5.seconds)
     )
   }

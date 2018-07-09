@@ -212,11 +212,12 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
     }
 
     "tears down containers that do not match the spec because of bind mounts" in {
+      import com.itv.servicebox.algebra.Lenses.mounts
       def bindMount(target: String) =
         BindMount(Paths.get("core/src/test/scala/com/itv/servicebox/test/resource.txt"), Paths.get(target))
 
       def setBindMounts(target: String)(c: Container.Spec): Container.Spec =
-        c.copy(mounts = List(bindMount(target)))
+        mounts.set(NonEmptyList.of(bindMount(target)))(c)
 
       val spec = Specs.pg.mapContainers(setBindMounts("/target2.md"))
 

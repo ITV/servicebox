@@ -24,8 +24,8 @@ object Lenses {
   def containerEnv[F[_]]: Lens[Container.Spec, Map[String, String]] =
     GenLens[Container.Spec](_.env)
 
-  def mounts: Lens[Container.Spec, List[BindMount]] =
-    GenLens[Container.Spec](_.mounts)
+  def mounts: Optional[Container.Spec, NonEmptyList[BindMount]] =
+    Optional[Container.Spec, NonEmptyList[BindMount]](_.mounts)(ms => s => s.copy(mounts = Some(ms)))
 
   def mountFrom: Lens[BindMount, Path] = GenLens[BindMount](_.from)
 

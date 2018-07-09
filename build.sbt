@@ -105,7 +105,7 @@ lazy val docker = withDeps((project in file("docker"))
   .settings(artefactSettings ++ Seq(
     moduleName := "servicebox-docker",
     libraryDependencies ++= Seq(
-      "com.spotify" % "docker-client" % "8.10.0"
+      "com.spotify" % "docker-client" % "8.11.7"
     )
   )))(core)
 

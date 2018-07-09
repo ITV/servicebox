@@ -7,6 +7,7 @@ import com.itv.servicebox.algebra.Container.Matcher
 import com.itv.servicebox.algebra.{BindMount, Container}
 import com.spotify.docker.client.messages.ContainerInfo
 
+import com.itv.servicebox.algebra.Lenses
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.util.Try
@@ -46,10 +47,10 @@ object ContainerMatcher extends Matcher[ContainerWithDetails] {
         NonEmptyList.fromList(removeEntrypoint(Nil)(cmd.split(' ').toList, entrypoint)))
   }
 
-  private def bindMounts(info: ContainerInfo): List[BindMount] =
-    info.mounts().asScala.toList.filter(_.`type` == "bind").map { bind =>
+  private def bindMounts(info: ContainerInfo) =
+    NonEmptyList.fromList(info.mounts().asScala.toList.filter(_.`type` == "bind").map { bind =>
       BindMount(Paths.get(bind.source), Paths.get(bind.destination), !bind.rw)
-    }
+    })
 
   private def envVars(info: ContainerInfo, envVarsWhitelist: Set[String]): Map[String, String] =
     info.config.env.asScala

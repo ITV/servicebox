@@ -42,7 +42,7 @@ package object algebra {
 
         _ <- I
           .lift(baseDir.toFile.exists())
-          .ifM(I.lift(()), I.lift(Files.createDirectory(baseDir)).void)
+          .ifM(I.lift(()), I.lift(baseDir.toFile.mkdirs()).void)
 
         _ <- I.lift(Files.createDirectory(mountDir))
 
@@ -59,7 +59,7 @@ package object algebra {
     def ref(ref: Service.Ref): Container.Ref = Container.Ref(s"${ref.show}/$imageName")
     def env: Map[String, String]
     def command: Option[NonEmptyList[String]]
-    def mounts: List[BindMount]
+    def mounts: Option[NonEmptyList[BindMount]]
   }
 
   object Container {
@@ -72,7 +72,7 @@ package object algebra {
                     env: Map[String, String],
                     internalPorts: Set[Int],
                     command: Option[NonEmptyList[String]],
-                    mounts: List[BindMount])
+                    mounts: Option[NonEmptyList[BindMount]])
         extends Container {
 
       def withAbsolutePaths: Spec =
@@ -101,7 +101,7 @@ package object algebra {
                           env: Map[String, String],
                           portMappings: Set[PortMapping],
                           command: Option[NonEmptyList[String]],
-                          mounts: List[BindMount])
+                          mounts: Option[NonEmptyList[BindMount]])
         extends Container {
       lazy val toSpec = Spec(imageName, env, portMappings.map(_._2), command, mounts).withAbsolutePaths
     }
