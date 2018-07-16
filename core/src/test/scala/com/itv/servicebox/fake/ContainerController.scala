@@ -17,8 +17,9 @@ import cats.syntax.functor._
 class ContainerController[F[_]](
     imageRegistry: ImageRegistry[F],
     logger: Logger[F],
+    network: Option[NetworkName],
     initialState: ContainerStates = Map.empty)(implicit tag: AppTag, I: ImpureEffect[F], M: MonadError[F, Throwable])
-    extends algebra.ContainerController[F](imageRegistry, logger) {
+    extends algebra.ContainerController[F](imageRegistry, logger, network) {
 
   private val containersByRef = new AtomicReference[ContainerStates](initialState)
 

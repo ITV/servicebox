@@ -11,14 +11,19 @@ import cats.syntax.applicativeError._
 import cats.syntax.flatMap._
 import cats.syntax.functor._
 import cats.syntax.either._
+import cats.syntax.foldable._
+import cats.instances.int._
 import com.itv.servicebox.algebra.Service.ReadyCheck
-import com.itv.servicebox.algebra._
+import com.itv.servicebox.algebra.{Lenses => L, _}
 import org.scalactic.TypeCheckedTripleEquals
 import org.scalatest.{Assertion, FreeSpec, Matchers, Succeeded}
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, TimeoutException}
 import scala.util.{Success, Try}
+
+object Wip  extends org.scalatest.Tag("wip")
+object Fail extends org.scalatest.Tag("fail")
 
 abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, Throwable], I: ImpureEffect[F])
     extends FreeSpec
@@ -46,7 +51,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
       for {
         range <- StateT.get[Id, Range]
         registered = container.register(range, serviceRef).valueOr(throw _)
-        _ <- StateT.set[Id, Range](range.drop(container.internalPorts.size))
+        _ <- StateT.set[Id, Range](range.drop(container.ports.count(_.autoAssigned)))
       } yield registered
 
     val (portRange, registered) = setupExisting(spec.containers).traverse(assign(_, spec.ref)).run(TestData.portRange)
@@ -57,7 +62,6 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
 
     runServices(TestData(portRange, List(spec), preExisting)) { env =>
       for {
-        _                 <- I.lift(Thread.sleep(10000))
         service           <- env.serviceRegistry.unsafeLookup(spec)
         runningContainers <- env.deps.containerController.runningContainers(service)
         assertion         <- f(env, runningContainers)
@@ -81,7 +85,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
   import TestData.appTag
 
   "setUp" - {
-    "initialises the service and updates the registry" in {
+    "creates a network, initialises the service and updates the registry" taggedAs Wip in new {
       val testData = TestData(Specs.pg)
       val spec     = testData.serviceAt(Specs.pg.ref)
 
@@ -89,15 +93,17 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
         for {
           service         <- env.serviceRegistry.unsafeLookup(spec)
           imageDownloaded <- env.deps.imageRegistry.imageExists(spec.containers.head.imageName)
+          networks        <- env.deps.networkController.networks
 
         } yield {
           service.endpoints.toNel.head.port should ===(testData.portRange.take(1).head)
           imageDownloaded should ===(true)
+          networks should ===(List("org_test"))
         }
       }
     }
 
-    "returns the registered services" in {
+    "returns the registered services" taggedAs Wip in {
       val testData = TestData.default[F]
       runServices(testData) { env =>
         for {
@@ -108,7 +114,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
       }
     }
 
-    "allows to discover service dependencies by injecting env vars in containers" in {
+    "support service discovery through env vars" taggedAs Wip in {
       //
       //   RMQ -> PG -> NC
       //
@@ -120,8 +126,8 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
       runServices(TestData(pg, rmq, nc)) { testEnv =>
         for {
           registered <- testEnv.runner.setUp
-          ncPort = nc.containers.head.internalPorts.head
-          pgPort = pg.containers.head.internalPorts.head
+          ncPort = nc.containers.head.ports.head
+          pgPort = pg.containers.head.ports.head
           ncLocation <- registered.locationFor(nc.ref, ncPort)
           pgLocation <- registered.locationFor(pg.ref, pgPort)
         } yield {
@@ -132,13 +138,13 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
           pgEnv should contain("NETCAT-SERVICE_HOST"              -> ncLocation.host)
           pgEnv should contain("NETCAT-SERVICE_HOSTPORT_FOR_8080" -> ncLocation.port.toString)
 
-          rmqEnv should contain("DB_HOST"                  -> pgLocation.host)
-          rmqEnv should contain(s"DB_HOSTPORT_FOR_$pgPort" -> pgLocation.port.toString)
+          rmqEnv should contain("DB_HOST"                                 -> pgLocation.host)
+          rmqEnv should contain(s"DB_HOSTPORT_FOR_${pgPort.internalPort}" -> pgLocation.port.toString)
         }
       }
     }
 
-    "assigns a host port for each container port in the spec" in {
+    "assigns a host port for each container port in the spec" taggedAs Wip in {
       val data = TestData(Specs.rmq).modifyPortRange(_.reverse)
       val spec = data.serviceAt(Specs.rmq.ref)
 
@@ -148,13 +154,28 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
 
         } yield {
           val hostPortsBound =
-            data.portRange.take(spec.containers.toList.flatMap(_.internalPorts).size).toList
+            data.portRange.take(spec.containers.foldMap(x => x.ports.size)).toList
 
           service.endpoints.toList.map(_.port) should ===(hostPortsBound)
         }
       }
     }
-    "does not assign a port that is in-range, but bound to a running service" in {
+
+    "explicitly assigns a host port with the same value as the container port" in {
+      val spec     = L.eachContainerPort.modify(p => PortSpec.assign(p.internalPort))(Specs.rmq)
+      val testData = TestData(spec)
+      runServices(testData) { env =>
+        for {
+          service <- env.serviceRegistry.unsafeLookup(spec)
+
+        } yield {
+          service.endpoints.toList.map(_.port) should ===(spec.containers.toList.flatMap(_.ports.map(_.internalPort)))
+        }
+      }
+
+    }
+
+    "does not assign a port that is in-range, but bound to a running service" taggedAs Wip in {
       val testData = TestData(Specs.rmq)
       val server   = new ServerSocket(TestData.portRange.head)
       try {
@@ -170,7 +191,8 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
         server.close()
       }
     }
-    "matches running containers" in {
+
+    "matches running containers" taggedAs Fail in {
       withRunningContainers(identity)(Specs.rmq) { (env, runningContainers) =>
         I.lift {
           runningContainers should have size 1
@@ -232,6 +254,22 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
       }
     }
 
+    "tears down containers that have changed name" in {
+      import com.itv.servicebox.algebra.Lenses.name
+
+      val spec = Specs.pg.mapContainers(name.set("new-name"))
+
+      withRunningContainers(_.map(name.set("old-name")))(spec) { (env, runningContainers) =>
+        for {
+          service <- env.serviceRegistry.unsafeLookup(spec)
+        } yield {
+          runningContainers should have size 1
+          runningContainers should !==(env.preExisting.map(_.container))
+          service.containers.map(_.toSpec) should ===(spec.containers.map(_.withAbsolutePaths))
+        }
+      }
+    }
+
     "raises an error if the unallocated port range cannot fit the ports in the spec" in {
       I.runSync(withServices(TestData.default[F].modifyPortRange(_.take(1))) {
           case _ =>
@@ -241,7 +279,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
     }
     "raises an error if a service container definition result in an empty port list" in {
       val testData                  = TestData[F](Specs.rmq)
-      val containersNoInternalPorts = Specs.rmq.containers.map(c => c.copy(internalPorts = Set.empty))
+      val containersNoInternalPorts = Specs.rmq.containers.map(_.copy(ports = Nil))
       val spec                      = Specs.rmq.copy(containers = containersNoInternalPorts)
       val containerRefs             = containersNoInternalPorts.toList.map(_.ref(Specs.rmq.ref))
 
@@ -318,9 +356,11 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
           _                 <- env.runner.tearDown
           maybeSrv          <- env.serviceRegistry.lookup(service.ref)
           runningContainers <- env.deps.containerController.runningContainers(service)
+          networks          <- env.deps.networkController.networks
         } yield {
           maybeSrv should ===(None)
           runningContainers shouldBe empty
+          networks shouldBe empty
         }
       }
     }

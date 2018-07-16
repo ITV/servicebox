@@ -5,8 +5,9 @@ import cats.syntax.flatMap._
 import cats.syntax.functor._
 import com.itv.servicebox.algebra.ContainerController.ContainerGroups
 
-abstract class ContainerController[F[_]](imageRegistry: ImageRegistry[F], logger: Logger[F])(
-    implicit M: MonadError[F, Throwable]) {
+abstract class ContainerController[F[_]](imageRegistry: ImageRegistry[F],
+                                         logger: Logger[F],
+                                         network: Option[NetworkName])(implicit M: MonadError[F, Throwable]) {
   def containerGroups(spec: Service.Registered[F]): F[ContainerGroups]
 
   def runningContainers(spec: Service.Registered[F]): F[List[Container.Registered]] =

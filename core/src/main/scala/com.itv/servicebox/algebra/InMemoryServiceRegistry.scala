@@ -28,7 +28,7 @@ class InMemoryServiceRegistry[F[_]](range: Range, logger: Logger[F])(implicit ta
   private val getRange: PortAllocation[F, Range] =
     StateT.get[F, AtomicReference[Range]].map(_.get())
 
-  private def dropFromRange(n: Int)(implicit A: Applicative[F]): PortAllocation[F, Unit] =
+  private def updateRange(n: Int)(implicit A: Applicative[F]): PortAllocation[F, Unit] =
     StateT.modifyF[F, AtomicReference[Range]] { ref =>
       I.lift(ref.getAndUpdate(_.drop(n))) *> A.pure(ref)
     }
@@ -41,17 +41,26 @@ class InMemoryServiceRegistry[F[_]](range: Range, logger: Logger[F])(implicit ta
     for {
       range <- getRange
       _     <- lift(logger.debug(s"current port range: $range"))
-      attemptedPorts <- lift(range.toStream.foldM(List.empty[Option[Int]]) {
+      portsWithIndex = container.ports.zipWithIndex.map(_.swap).toMap
+      attemptedPorts <- lift(range.toStream.foldM(List.empty[Int]) {
         case (acc, port) =>
-          if (acc.flatten.size == container.internalPorts.size)
+          if (acc.size == portsWithIndex.size)
             A.pure(acc)
-          else
-            checkPort(port).map(isAvailable => acc :+ Some(port).filter(_ => isAvailable))
+          else {
+            portsWithIndex.get(acc.size).fold(A.pure(acc)) {
+              case PortSpec.Assign(_, hostPort) =>
+                A.pure(acc :+ hostPort)
+              case PortSpec.AutoAssign(_) =>
+                checkPort(port).map { isAvailable =>
+                  if (isAvailable) acc :+ port else acc
+                }
+            }
+          }
       })
 
       _          <- lift(logger.debug(s"attempted ports: $attemptedPorts"))
-      registered <- lift(M.fromEither(container.register(attemptedPorts.flatten, serviceRef)))
-      _          <- dropFromRange(attemptedPorts.size)
+      registered <- lift(M.fromEither(container.register(attemptedPorts, serviceRef)))
+      _          <- updateRange(attemptedPorts.size)
     } yield registered
 
   private def checkPort(port: Int): F[Boolean] = I.lift {
@@ -113,11 +122,12 @@ class InMemoryServiceRegistry[F[_]](range: Range, logger: Logger[F])(implicit ta
         val updated = data
           .get(id)
           .map { m =>
+            logger.info(s"Mappings: ${m}")
             m.updated(cId, mappings)
           }
           .fold(data)(updatedSrv => data.updated(id, updatedSrv))
 
-        logger.debug(s"updated port mappings: ${updated} | mappings set: ${mappings}")
+        logger.debug(s"updated port mappings: $updated | mappings set: $mappings")
 
         updated
       })
