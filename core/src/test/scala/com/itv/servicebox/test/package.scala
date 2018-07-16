@@ -6,6 +6,7 @@ import com.itv.servicebox.algebra.{ImpureEffect, InMemoryServiceRegistry, _}
 import org.scalatest.Assertion
 import org.scalatest.Matchers._
 import cats.syntax.show._
+import com.itv.servicebox.fake.TestNetworkController
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
@@ -26,14 +27,16 @@ package object test {
 
     def rabbitSpec[F[_]](implicit A: Applicative[F]) = Service.Spec[F](
       "rabbit",
-      NonEmptyList.of(Container.Spec("rabbitmq:3.6.10-management", Map.empty, Set(5672, 15672), None, None)),
+      NonEmptyList.of(
+        Container.Spec("rabbitmq:3.6.10-management", Map.empty[String, String], Set(5672, 15672), None, None)),
       constantReady("rabbit ready check")
     )
 
     def ncSpec[F[_]](implicit A: Applicative[F]) = Service.Spec[F](
       "netcat-service",
       NonEmptyList.of(
-        Container.Spec("subfuzion/netcat", Map.empty, Set(8080), Some(NonEmptyList.of("-l", "8080")), None)),
+        Container
+          .Spec("subfuzion/netcat", Map.empty[String, String], Set(8080), Some(NonEmptyList.of("-l", "8080")), None)),
       constantReady("netcat ready check")
     )
 
@@ -83,6 +86,7 @@ package object test {
   class Dependencies[F[_]](
       val logger: Logger[F],
       val imageRegistry: ImageRegistry[F],
+      val networkController: TestNetworkController[F],
       val containerController: ContainerController[F],
       val scheduler: Scheduler[F])(implicit I: ImpureEffect[F], M: MonadError[F, Throwable], tag: AppTag) {
 
@@ -92,8 +96,11 @@ package object test {
     def serviceController(serviceRegistry: ServiceRegistry[F]): ServiceController[F] =
       new ServiceController[F](logger, serviceRegistry, containerController, scheduler)
 
-    def runner(ctrl: ServiceController[F], registry: ServiceRegistry[F], services: List[Service.Spec[F]]): Runner[F] =
-      new Runner[F](ctrl, registry)(services: _*)
+    def runner(srvCtrl: ServiceController[F],
+               networkCtrl: TestNetworkController[F],
+               registry: ServiceRegistry[F],
+               services: List[Service.Spec[F]]): Runner[F] =
+      new Runner[F](srvCtrl, networkCtrl, registry)(services: _*)
   }
 
   case class TestEnv[F[_]](deps: Dependencies[F],
@@ -109,21 +116,22 @@ package object test {
       I: ImpureEffect[F]): F[Assertion] = {
 
     val serviceRegistry = deps.serviceRegistry(testData.portRange)
-    val controller      = deps.serviceController(serviceRegistry)
-    val runner          = deps.runner(controller, serviceRegistry, testData.services)
+    val srvCtrl         = deps.serviceController(serviceRegistry)
+    val networkCtrl     = deps.networkController
+    val runner          = deps.runner(srvCtrl, networkCtrl, serviceRegistry, testData.services)
 
     import cats.instances.list._
     import cats.syntax.flatMap._
     import cats.syntax.foldable._
     import cats.syntax.functor._
 
-    //Note: we use foldM and not traverse here to avoid parallel execution
-    // (which happens in the case of the default cats instance of `Traverse[Future]`)
     val setupRunningContainers =
-      testData.preExisting.foldM(())((_, c) =>
-        deps.containerController.fetchImageAndStartContainer(c.serviceRef, c.container).void)
+      testData.preExisting.foldM(())(
+        (_, c) =>
+          //TODO: allow to connect to a specific network
+          deps.containerController.fetchImageAndStartContainer(c.serviceRef, c.container).void)
 
-    setupRunningContainers >> runner.setupWithRuntimeInfo >>= { x =>
+    networkCtrl.createNetwork >> setupRunningContainers >> runner.setupWithRuntimeInfo >>= { x =>
       val runtimeInfo = x.map { case (registered, info) => registered.ref -> info }.toMap
       runAssertion(TestEnv[F](deps, serviceRegistry, runner, runtimeInfo, testData.preExisting))
     }

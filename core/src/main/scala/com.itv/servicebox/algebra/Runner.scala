@@ -1,39 +1,39 @@
 package com.itv.servicebox.algebra
 
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 import cats.MonadError
-
-import cats.syntax.show._
-import cats.syntax.traverse._
-import cats.syntax.foldable._
-import cats.syntax.functor._
-import cats.syntax.flatMap._
+import cats.syntax.all._
 import cats.instances.all._
-
 import Service._
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.FiniteDuration
 
-class Runner[F[_]](ctrl: ServiceController[F], registry: ServiceRegistry[F])(serviceSeq: Spec[F]*)(
-    implicit M: MonadError[F, Throwable],
-    I: ImpureEffect[F],
-    tag: AppTag) {
+class Runner[F[_]](srvCtrl: ServiceController[F], networkCtrl: NetworkController[F], registry: ServiceRegistry[F])(
+    serviceSeq: Spec[F]*)(implicit M: MonadError[F, Throwable], I: ImpureEffect[F], tag: AppTag) {
 
-  private val services = serviceSeq.toList
+  private val services          = serviceSeq.toList
+  private val tearDownCompleted = new AtomicReference[Set[Service.Ref]](Set.empty[Service.Ref])
 
   def setUp(implicit ec: ExecutionContext): F[ServicesByRef[F]] =
     for {
+      _          <- networkCtrl.createNetwork
       services   <- servicesInReverseTopologicalOrder
       registered <- services.foldM(ServicesByRef.empty[F])((acc, spec) => setUp(spec, acc).map(acc + _))
     } yield registered
 
   def setupWithRuntimeInfo(implicit ec: ExecutionContext): F[List[(Registered[F], RuntimeInfo)]] =
-    services.foldM(List.empty[(Registered[F], RuntimeInfo)])((acc, s) => setupWithRuntimeInfo(s).map(acc :+ _))
+    for {
+      _        <- networkCtrl.createNetwork
+      services <- servicesInReverseTopologicalOrder
+      registered <- services.foldM(List.empty[(Registered[F], RuntimeInfo)])((acc, s) =>
+        setupWithRuntimeInfo(s).map(acc :+ _))
+    } yield registered
 
   def tearDown(implicit ec: ExecutionContext): F[Unit] =
-    services.foldM(())((_, s) => tearDown(s).void)
+    services.foldM(())((_, s) => tearDownOnce(s).void)
 
   private def servicesInReverseTopologicalOrder: F[List[Service.Spec[F]]] = M.fromEither {
     val servicesByRef = services.groupBy(_.ref).mapValues(_.head)
@@ -61,17 +61,16 @@ class Runner[F[_]](ctrl: ServiceController[F], registry: ServiceRegistry[F])(ser
       depenendanciesEnv <- spec.dependencies.toList
         .foldMapM[F, Map[String, String]](ref => registered.envFor(ref))
 
-      registered <- ctrl.start(spec.mergeToContainersEnv(depenendanciesEnv))
-      _          <- ctrl.waitUntilReady(registered)
+      registered <- srvCtrl.start(spec.mergeToContainersEnv(depenendanciesEnv))
+      _          <- srvCtrl.waitUntilReady(registered)
     } yield registered
 
   private def setupWithRuntimeInfo(spec: Spec[F])(implicit ec: ExecutionContext): F[(Registered[F], RuntimeInfo)] =
     for {
-      _          <- tearDown(spec)
       t1         <- I.lift(System.currentTimeMillis())
-      registered <- ctrl.start(spec)
+      registered <- srvCtrl.start(spec)
       t2         <- I.lift(System.currentTimeMillis())
-      _          <- ctrl.waitUntilReady(registered)
+      _          <- srvCtrl.waitUntilReady(registered)
       t3         <- I.lift(System.currentTimeMillis())
     } yield {
       val setupTime      = FiniteDuration(t2 - t1, TimeUnit.MILLISECONDS)
@@ -79,9 +78,17 @@ class Runner[F[_]](ctrl: ServiceController[F], registry: ServiceRegistry[F])(ser
       (registered, Service.RuntimeInfo(setupTime, readyCheckTime))
     }
 
-  private def tearDown(spec: Spec[F]): F[Unit] =
+  private def tearDownOnce(spec: Spec[F]): F[Unit] =
     for {
+      alreadyDone     <- I.lift(tearDownCompleted.get())
       maybeRegistered <- registry.lookup(spec)
-      _               <- maybeRegistered.fold(M.unit)(ctrl.stop)
+      _ <- maybeRegistered.filterNot(srv => alreadyDone(srv.ref)).fold(M.unit) { srv =>
+        srvCtrl.stop(srv) >> I.lift(tearDownCompleted.getAndUpdate(_ + srv.ref))
+      }
+      _ <- I
+        .lift(tearDownCompleted.get)
+        .map(_ == services.map(_.ref).toSet)
+        .ifM(networkCtrl.removeNetwork, I.unit)
+
     } yield ()
 }

@@ -18,15 +18,22 @@ object ContainerMatcher extends Matcher[ContainerWithDetails] {
     val matcherResult = Matcher.Result(matched, expected)(_: Container.Registered)
     val env           = envVars(matched.info, expected.env.keySet)
 
-    val parsed = Container.Registered(expected.ref,
-                                      matched.container.image(),
-                                      env,
-                                      containerPortMappings(matched.info),
-                                      maybeCmd(matched, expected),
-                                      bindMounts(matched.info))
+    val parsed = Container.Registered(
+      expected.ref,
+      matched.container.image(),
+      env,
+      containerPortMappings(matched.info),
+      maybeCmd(matched, expected),
+      bindMounts(matched.info),
+      assignedContainerName(matched, expected.name.isDefined)
+    )
 
     matcherResult(parsed)
   }
+
+  private def assignedContainerName(matched: ContainerWithDetails, expectedHasName: Boolean) =
+    Option(matched.info.name.replaceFirst("^\\/", "")).filter(_ =>
+      expectedHasName && matched.container.labels().asScala.exists(_._1 == AssignedName))
 
   private def maybeCmd(matched: ContainerWithDetails, expected: Container.Registered) = {
     val entrypoint = matched.info.config.entrypoint.asScala.toList

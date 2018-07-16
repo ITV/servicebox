@@ -5,8 +5,10 @@ import java.util.concurrent.{Executor, ExecutorService, Executors, ScheduledExec
 import com.itv.servicebox.fake
 import com.itv.servicebox.interpreter._
 import com.itv.servicebox.test.{Dependencies, RunnerTest}
+
 import scala.concurrent.ExecutionContext.Implicits.global
 import cats.instances.future._
+import com.itv.servicebox.fake.TestNetworkController
 
 import scala.concurrent.Future
 
@@ -15,10 +17,14 @@ class RunnerWithFakeContainersFutureTest extends RunnerTest[Future] {
   val imageRegistry                               = new fake.InMemoryImageRegistry[Future](logger)
   implicit val executor: ScheduledExecutorService = Executors.newScheduledThreadPool(1)
 
-  override def dependencies(implicit tag: AppTag) = new Dependencies[Future](
-    logger,
-    imageRegistry,
-    new fake.ContainerController[Future](imageRegistry, logger),
-    Scheduler.futureScheduler(executor, logger)
-  )
+  override def dependencies(implicit tag: AppTag) = {
+    val networkCtrl = TestNetworkController[Future]
+    new Dependencies[Future](
+      logger,
+      imageRegistry,
+      networkCtrl,
+      new fake.ContainerController[Future](imageRegistry, logger, networkCtrl.networkName),
+      Scheduler.futureScheduler(executor, logger)
+    )
+  }
 }

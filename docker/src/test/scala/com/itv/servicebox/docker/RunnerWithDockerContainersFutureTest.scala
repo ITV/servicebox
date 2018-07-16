@@ -21,18 +21,20 @@ class RunnerWithDockerContainersFutureTest extends RunnerTest[Future] with Befor
   implicit val logger                             = new FutureLogger
   val imageRegistry                               = new DockerImageRegistry[Future](dockerClient, logger)
 
-  val containerController = {
+  val networkCtrl = {
+    import TestData.appTag
+    new DockerTestNetworkController(dockerClient, logger)
+  }
+
+  val containerCtrl = {
     //TODO: this is nasty! fix appTag..
     import TestData.appTag
-    new DockerContainerController(dockerClient, logger)
+    new DockerContainerController(dockerClient, logger, networkCtrl.networkName)
   }
 
   override def dependencies(implicit tag: AppTag): Dependencies[Future] =
-    new Dependencies(logger, imageRegistry, containerController, Scheduler.futureScheduler)
+    new Dependencies(logger, imageRegistry, networkCtrl, containerCtrl, Scheduler.futureScheduler)
 
   override def withServices(testData: TestData[Future])(f: TestEnv[Future] => Future[Assertion])(implicit tag: AppTag) =
-    containerController.stopContainers >> super.withServices(testData)(f)
-
-  override def afterAll() =
-    Await.result(containerController.stopContainers, Duration.Inf)
+    containerCtrl.removeContainers >> networkCtrl.removeNetwork() >> super.withServices(testData)(f)
 }

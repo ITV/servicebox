@@ -23,6 +23,8 @@ package object algebra {
 
   type ContainerMappings = Map[Container.Ref, Set[PortMapping]]
 
+  type NetworkName = String
+
   type PortAllocation[F[_], A] = StateT[F, AtomicReference[Range], A]
 
   case class AppTag(org: String, appName: String)
@@ -42,7 +44,7 @@ package object algebra {
 
         _ <- I
           .lift(baseDir.toFile.exists())
-          .ifM(I.lift(()), I.lift(baseDir.toFile.mkdirs()).void)
+          .ifM(I.unit, I.lift(baseDir.toFile.mkdirs()).void)
 
         _ <- I.lift(Files.createDirectory(mountDir))
 
@@ -54,12 +56,31 @@ package object algebra {
     }
   }
 
+  //TODO: provide some builder methods
   private[algebra] sealed trait Container {
     def imageName: String
     def ref(ref: Service.Ref): Container.Ref = Container.Ref(s"${ref.show}/$imageName")
     def env: Map[String, String]
     def command: Option[NonEmptyList[String]]
     def mounts: Option[NonEmptyList[BindMount]]
+    def name: Option[String]
+  }
+
+  sealed trait PortSpec {
+    def internalPort: Int
+    def autoAssigned: Boolean
+  }
+
+  object PortSpec {
+    case class AutoAssign(internalPort: Int) extends PortSpec {
+      override def autoAssigned = true
+    }
+    case class Assign(internalPort: Int, hostPort: Int) extends PortSpec {
+      override def autoAssigned = false
+    }
+    def assign(internal: Int, host: Int): PortSpec = Assign(internal, host)
+    def assign(port: Int): PortSpec                = Assign(port, port)
+    def autoAssign(internal: Int): PortSpec        = AutoAssign(internal)
   }
 
   object Container {
@@ -70,30 +91,45 @@ package object algebra {
 
     case class Spec(imageName: String,
                     env: Map[String, String],
-                    internalPorts: Set[Int],
+                    ports: List[PortSpec],
                     command: Option[NonEmptyList[String]],
-                    mounts: Option[NonEmptyList[BindMount]])
+                    mounts: Option[NonEmptyList[BindMount]],
+                    name: Option[String] = None)
         extends Container {
 
       def withAbsolutePaths: Spec =
         (L.mounts composeTraversal each composeLens L.mountFrom)
           .modify(_.toAbsolutePath)(this)
 
-      def register(hostPortRange: Seq[Int], serviceRef: Service.Ref): Either[Throwable, Container.Registered] =
-        if (hostPortRange.size < internalPorts.size)
-          Left(
-            new IllegalArgumentException(
-              s"supplied port range is too small! $hostPortRange, internal ports: $internalPorts"))
-        else
+      def register(hostPorts: Seq[Int], serviceRef: Service.Ref): Either[Throwable, Container.Registered] =
+        if (hostPorts.size < ports.count(_.autoAssigned))
+          Left(new IllegalArgumentException(s"supplied port range is too small! $hostPorts, internal ports: $ports"))
+        else {
+          val (autoAssigned, assigned) = ports.partition(_.autoAssigned)
+          val mappings = autoAssigned.map(_.internalPort).zip(hostPorts).map(_.swap) ++ assigned.collect {
+            case PortSpec.Assign(internal, host) => host -> internal
+          }
+
           Right(
             Registered(
               ref(serviceRef),
               imageName,
               env,
-              internalPorts.zip(hostPortRange).map(_.swap),
+              mappings.toSet,
               command,
-              mounts
+              mounts,
+              name
             ))
+        }
+    }
+
+    object Spec {
+      def apply(imageName: String,
+                env: Map[String, String],
+                ports: Set[Int],
+                command: Option[NonEmptyList[String]],
+                mounts: Option[NonEmptyList[BindMount]]): Spec =
+        Spec(imageName, env, ports.map(PortSpec.AutoAssign).toList, command, mounts)
     }
 
     case class Registered(ref: Container.Ref,
@@ -101,9 +137,18 @@ package object algebra {
                           env: Map[String, String],
                           portMappings: Set[PortMapping],
                           command: Option[NonEmptyList[String]],
-                          mounts: Option[NonEmptyList[BindMount]])
+                          mounts: Option[NonEmptyList[BindMount]],
+                          name: Option[String] = None)
         extends Container {
-      lazy val toSpec = Spec(imageName, env, portMappings.map(_._2), command, mounts).withAbsolutePaths
+      lazy val toSpec = Spec(
+        imageName,
+        env,
+        //TODO: we should retain the port-spec type (i.e. auto, or assign)
+        portMappings.map { case (_, internal) => PortSpec.AutoAssign(internal) }.toList,
+        command,
+        mounts,
+        name
+      ).withAbsolutePaths
     }
 
     trait Matcher[Repr] {
@@ -173,7 +218,7 @@ package object algebra {
         val registeredContainers = containerList.flatMap { c =>
           mappings
             .get(c.ref(ref))
-            .map(ms => Container.Registered(c.ref(ref), c.imageName, c.env, ms, c.command, c.mounts))
+            .map(ms => Container.Registered(c.ref(ref), c.imageName, c.env, ms, c.command, c.mounts, c.name))
         }
 
         registeredContainers
@@ -216,16 +261,22 @@ package object algebra {
   case class Endpoints(toNel: NonEmptyList[Location]) {
     val toList: List[Location] = toNel.toList
 
-    def attemptLocationFor(containerPort: Int): Either[Throwable, Location] = {
+    def attemptLocationFor(internal: Int): Either[Throwable, Location] =
+      attemptLocationFor(PortSpec.AutoAssign(internal))
+
+    def attemptLocationFor(port: PortSpec): Either[Throwable, Location] = {
       val portMappings = toNel.map(l => s"${l.port} -> ${l.containerPort}").toList.mkString(", ")
       toNel
-        .find(_.containerPort == containerPort)
+        .find(_.containerPort == port.internalPort)
         .toRight(new IllegalArgumentException(
-          s"Cannot find a location for $containerPort. Existing port mappings: $portMappings"))
+          s"Cannot find a location for ${port.internalPort}. Existing port mappings: $portMappings"))
     }
 
-    def locationFor[F[_]](containerPort: Int)(implicit A: ApplicativeError[F, Throwable]): F[Location] =
-      A.fromEither(attemptLocationFor(containerPort))
+    def locationFor[F[_]](internal: Int)(implicit A: ApplicativeError[F, Throwable]): F[Location] =
+      locationFor[F](PortSpec.AutoAssign(internal))
+
+    def locationFor[F[_]](port: PortSpec)(implicit A: ApplicativeError[F, Throwable]): F[Location] =
+      A.fromEither(attemptLocationFor(port))
   }
 
   object ServicesByRef {
@@ -246,8 +297,11 @@ package object algebra {
     private def serviceFor(ref: Service.Ref): Either[Throwable, Service.Registered[F]] =
       toMap.get(ref).toRight(refNotFound(ref))
 
-    def locationFor(ref: Service.Ref, containerPort: Int): F[Location] =
-      A.fromEither(serviceFor(ref).flatMap(_.endpoints.attemptLocationFor(containerPort)))
+    def locationFor(ref: Service.Ref, internal: Int): F[Location] =
+      locationFor(ref, PortSpec.AutoAssign(internal))
+
+    def locationFor(ref: Service.Ref, port: PortSpec): F[Location] =
+      A.fromEither(serviceFor(ref).flatMap(_.endpoints.attemptLocationFor(port)))
 
     def envFor(serviceRef: Service.Ref): F[Map[String, String]] =
       A.fromEither(for {
@@ -272,6 +326,7 @@ package object algebra {
   //into an F
   abstract class ImpureEffect[F[_]] {
     def lift[A](a: => A): F[A]
+    val unit: F[Unit] = lift(())
     def runSync[A](effect: F[A]): A
   }
 
