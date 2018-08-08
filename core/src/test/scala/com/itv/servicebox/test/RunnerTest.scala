@@ -7,14 +7,15 @@ import java.util.concurrent.atomic.AtomicInteger
 
 import cats.MonadError
 import cats.data.NonEmptyList
-import cats.syntax.applicativeError._
-import cats.syntax.flatMap._
-import cats.syntax.functor._
-import cats.syntax.either._
-import cats.syntax.foldable._
+import cats.effect.Effect
 import cats.instances.int._
+import cats.syntax.applicativeError._
+import cats.syntax.either._
+import cats.syntax.flatMap._
+import cats.syntax.foldable._
+import cats.syntax.functor._
 import com.itv.servicebox.algebra.Service.ReadyCheck
-import com.itv.servicebox.algebra.{Lenses => L, _}
+import com.itv.servicebox.algebra._
 import org.scalactic.TypeCheckedTripleEquals
 import org.scalatest.{Assertion, FreeSpec, Matchers, Succeeded}
 
@@ -25,7 +26,10 @@ import scala.util.{Success, Try}
 object Wip  extends org.scalatest.Tag("wip")
 object Fail extends org.scalatest.Tag("fail")
 
-abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, Throwable], I: ImpureEffect[F])
+abstract class RunnerTest[F[_]](implicit ec: ExecutionContext,
+                                M: MonadError[F, Throwable],
+                                E: Effect[F],
+                                U: UnsafeBlocking[F])
     extends FreeSpec
     with Matchers
     with TypeCheckedTripleEquals {
@@ -37,13 +41,13 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
     withRunningServices(dependencies)(testData)(f)
 
   def runServices(testData: TestData[F])(f: TestEnv[F] => F[Assertion])(implicit appTag: AppTag) =
-    I.runSync(withServices(testData)(f))
+    U.runSync(withServices(testData)(f))
 
   def withRunningContainers(setupExisting: NonEmptyList[Container.Spec] => NonEmptyList[Container.Spec])(
       spec: Service.Spec[F])(f: (TestEnv[F], List[Container.Registered]) => F[Assertion])(implicit appTag: AppTag) = {
 
-    import cats.data.StateT
     import cats.Id
+    import cats.data.StateT
 
     type PortAllocation[A] = StateT[Id, Range, A]
 
@@ -60,7 +64,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
       RunningContainer(_, spec.ref)
     }.toList
 
-    runServices(TestData(portRange, List(spec), preExisting)) { env =>
+    withServices(TestData(portRange, List(spec), preExisting)) { env =>
       for {
         service           <- env.serviceRegistry.unsafeLookup(spec)
         runningContainers <- env.deps.containerController.runningContainers(service)
@@ -71,9 +75,9 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
 
   def timed[A](f: F[A]): F[(A, FiniteDuration)] =
     for {
-      t1 <- I.lift(System.currentTimeMillis())
+      t1 <- E.delay(System.currentTimeMillis())
       a  <- f
-      t2 <- I.lift(System.currentTimeMillis())
+      t2 <- E.delay(System.currentTimeMillis())
     } yield (a, FiniteDuration(t2 - t1, TimeUnit.MILLISECONDS))
 
   object Specs {
@@ -85,7 +89,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
   import TestData.appTag
 
   "setUp" - {
-    "creates a network, initialises the service and updates the registry" taggedAs Fail in new {
+    "creates a network, initialises the service and updates the registry" in new {
       val testData = TestData(Specs.pg)
       val spec     = testData.serviceAt(Specs.pg.ref)
 
@@ -162,7 +166,10 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
     }
 
     "explicitly assigns a host port with the same value as the container port" in {
-      val spec     = L.eachContainerPort.modify(p => PortSpec.assign(p.internalPort))(Specs.rmq)
+//      val spec     = L.eachContainerPort.modify(p => PortSpec.assign(p.internalPort))(Specs.rmq)
+      val spec = Specs.rmq.copy(
+        containers = Specs.rmq.containers.map(c => c.copy(ports = c.ports.map(p => PortSpec.assign(p.internalPort))))
+      )
       val testData = TestData(spec)
       runServices(testData) { env =>
         for {
@@ -194,7 +201,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
 
     "matches running containers" in {
       withRunningContainers(identity)(Specs.rmq) { (env, runningContainers) =>
-        I.lift {
+        E.delay {
           runningContainers should have size 1
           runningContainers should ===(env.preExisting.map(_.container))
         }
@@ -271,7 +278,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
     }
 
     "raises an error if the unallocated port range cannot fit the ports in the spec" in {
-      I.runSync(withServices(TestData.default[F].modifyPortRange(_.take(1))) {
+      U.runSync(withServices(TestData.default[F].modifyPortRange(_.take(1))) {
           case _ =>
             M.pure(Succeeded)
         }.attempt)
@@ -279,14 +286,14 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
     }
     "raises an error if a service container definition result in an empty port list" in {
       val testData                  = TestData[F](Specs.rmq)
-      val containersNoInternalPorts = Specs.rmq.containers.map(_.copy(ports = Nil))
+      val containersNoInternalPorts = Specs.rmq.containers.map(_.copy(ports = Set.empty))
       val spec                      = Specs.rmq.copy(containers = containersNoInternalPorts)
       val containerRefs             = containersNoInternalPorts.toList.map(_.ref(Specs.rmq.ref))
 
       val expected =
         ServiceRegistry.EmptyPortList(containerRefs)
 
-      I.runSync(withServices(testData.withSpecs(spec)) {
+      U.runSync(withServices(testData.withSpecs(spec)) {
           case _ =>
             M.pure(Succeeded)
         }.attempt)
@@ -301,12 +308,12 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
         Specs.rmq
           .copy(
             readyCheck = ReadyCheck(_ =>
-                                      I.lift(counter.getAndIncrement()) >> M.raiseError[Unit](
+                                      E.delay(counter.getAndIncrement()) >> M.raiseError[Unit](
                                         new IllegalStateException(s"Cannot access test service")),
                                     100.millis,
                                     1.second))
 
-      val (result, elapsedTime) = I.runSync(
+      val (result, elapsedTime) = U.runSync(
         timed {
           withServices(testData.withSpecs(rabbitSpec)) {
             case _ => M.pure(fail("this should time out!"))
@@ -329,7 +336,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext, M: MonadError[F, 
             M.pure(())
         }, 100.millis, 1.second))
 
-      I.runSync(
+      U.runSync(
         withServices(TestData(rabbitSpec)) { env =>
           for {
             service           <- env.serviceRegistry.unsafeLookup(rabbitSpec)

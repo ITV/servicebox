@@ -1,6 +1,7 @@
 package com.itv.servicebox.docker
 
 import cats.MonadError
+import cats.effect.Effect
 import cats.syntax.flatMap._
 import cats.syntax.functor._
 import com.itv.servicebox.algebra
@@ -23,7 +24,7 @@ import com.spotify.docker.client.messages.HostConfig.Bind
 class DockerContainerController[F[_]](
     dockerClient: DefaultDockerClient,
     logger: Logger[F],
-    network: Option[NetworkName])(implicit I: ImpureEffect[F], M: MonadError[F, Throwable], tag: AppTag)
+    network: Option[NetworkName])(implicit E: Effect[F], M: MonadError[F, Throwable], tag: AppTag)
     extends algebra.ContainerController[F](new DockerImageRegistry[F](dockerClient, logger), logger, network) {
 
   override def containerGroups(service: Service.Registered[F]) =
@@ -44,17 +45,17 @@ class DockerContainerController[F[_]](
     }
 
   def runningContainersByImageName(spec: Service.Spec[F]): F[Map[String, List[JavaContainer]]] =
-    I.lift(dockerClient.listContainers(queryParams(spec.ref, None): _*))
+    E.delay(dockerClient.listContainers(queryParams(spec.ref, None): _*))
       .map(_.asScala.toList.groupBy(_.image()))
 
   override protected def startContainer(serviceRef: Service.Ref, container: Container.Registered): F[Unit] = {
     val config = containerConfig(serviceRef, container)
 
     for {
-      res <- I.lift(
+      res <- E.delay(
         container.name
           .fold(dockerClient.createContainer(config))(name => dockerClient.createContainer(config, name)))
-      _ <- I.lift(dockerClient.startContainer(res.id()))
+      _ <- E.delay(dockerClient.startContainer(res.id()))
 
     } yield ()
   }
@@ -67,12 +68,11 @@ class DockerContainerController[F[_]](
 
   private def forceRm(params: ListContainersParam*): F[Unit] =
     for {
-      containers <- I
-        .lift(dockerClient.listContainers(params: _*))
+      containers <- E
+        .delay(dockerClient.listContainers(params: _*))
         .map(_.asScala.toList)
       _ <- logger.warn(s"removing containers: ${containers.map(_.id())}")
-      _ <- containers.traverse(c => I.lift(dockerClient.removeContainer(c.id, RemoveContainerParam.forceKill())))
-      _ <- I.lift(logger.info(s"stopping ${containers.size} containers"))
+      _ <- containers.traverse(c => E.delay(dockerClient.removeContainer(c.id, RemoveContainerParam.forceKill())))
 
     } yield ()
 

@@ -7,15 +7,16 @@ import cats.MonadError
 import cats.syntax.all._
 import cats.instances.all._
 import Service._
+import cats.effect.Effect
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.FiniteDuration
 
 class Runner[F[_]](srvCtrl: ServiceController[F], networkCtrl: NetworkController[F], registry: ServiceRegistry[F])(
-    serviceSeq: Spec[F]*)(implicit M: MonadError[F, Throwable], I: ImpureEffect[F], tag: AppTag) {
+    serviceSeq: Spec[F]*)(implicit M: MonadError[F, Throwable], E: Effect[F], tag: AppTag) {
 
-  private val services          = serviceSeq.toList
-  private val tearDownCompleted = new AtomicReference[Set[Service.Ref]](Set.empty[Service.Ref])
+  private val services           = serviceSeq.toList
+  private val tearedDownServices = new AtomicReference[Set[Service.Ref]](Set.empty[Service.Ref])
 
   def setUp(implicit ec: ExecutionContext): F[ServicesByRef[F]] =
     for {
@@ -67,11 +68,11 @@ class Runner[F[_]](srvCtrl: ServiceController[F], networkCtrl: NetworkController
 
   private def setupWithRuntimeInfo(spec: Spec[F])(implicit ec: ExecutionContext): F[(Registered[F], RuntimeInfo)] =
     for {
-      t1         <- I.lift(System.currentTimeMillis())
+      t1         <- E.delay(System.currentTimeMillis())
       registered <- srvCtrl.start(spec)
-      t2         <- I.lift(System.currentTimeMillis())
+      t2         <- E.delay(System.currentTimeMillis())
       _          <- srvCtrl.waitUntilReady(registered)
-      t3         <- I.lift(System.currentTimeMillis())
+      t3         <- E.delay(System.currentTimeMillis())
     } yield {
       val setupTime      = FiniteDuration(t2 - t1, TimeUnit.MILLISECONDS)
       val readyCheckTime = FiniteDuration(t3 - t2, TimeUnit.MILLISECONDS)
@@ -80,15 +81,15 @@ class Runner[F[_]](srvCtrl: ServiceController[F], networkCtrl: NetworkController
 
   private def tearDownOnce(spec: Spec[F]): F[Unit] =
     for {
-      alreadyDone     <- I.lift(tearDownCompleted.get())
+      alreadyDone     <- E.delay(tearedDownServices.get())
       maybeRegistered <- registry.lookup(spec)
       _ <- maybeRegistered.filterNot(srv => alreadyDone(srv.ref)).fold(M.unit) { srv =>
-        srvCtrl.tearDown(srv) >> I.lift(tearDownCompleted.getAndUpdate(_ + srv.ref))
+        srvCtrl.tearDown(srv) *> E.delay(tearedDownServices.getAndUpdate(_ + srv.ref))
       }
-      _ <- I
-        .lift(tearDownCompleted.get)
+      _ <- E
+        .delay(tearedDownServices.get)
         .map(_ == services.map(_.ref).toSet)
-        .ifM(networkCtrl.removeNetwork, I.unit)
+        .ifM(E.delay(Thread.sleep(2000)) *> networkCtrl.removeNetwork, E.unit)
 
     } yield ()
 }

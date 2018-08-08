@@ -27,6 +27,7 @@ val baseSettings = Seq(
   ),
   libraryDependencies ++= Seq(
     "org.typelevel" %% "cats-core" % "1.1.0",
+    "org.typelevel" %% "cats-effect" % "0.10",
     "org.scalatest" %% "scalatest" % "3.0.4" % "test",
     "com.github.julien-truffaut" %%  "monocle-core"  % monocleVersion,
     "com.github.julien-truffaut" %%  "monocle-macro" % monocleVersion,
@@ -92,15 +93,6 @@ lazy val core = (project in file("core"))
   moduleName := "servicebox-core"
 )
 
-lazy val coreIO = withDeps((project in file("core-io"))
-  .settings(
-    artefactSettings ++ Seq(
-      moduleName := "servicebox-core-io",
-      libraryDependencies ++= Seq(
-      "org.typelevel" %% "cats-effect" % "0.10"
-     )
-    )))(core)
-
 lazy val docker = withDeps((project in file("docker"))
   .settings(artefactSettings ++ Seq(
     moduleName := "servicebox-docker",
@@ -108,11 +100,6 @@ lazy val docker = withDeps((project in file("docker"))
       "com.spotify" % "docker-client" % "8.11.7"
     )
   )))(core)
-
-lazy val dockerIO = withDeps((project in file("docker-io"))
-  .settings(artefactSettings ++ Seq(
-    moduleName := "servicebox-docker-io"
-  )))(core, coreIO, docker)
 
 lazy val example = withDeps((project in file("example"))
   .enablePlugins(TutPlugin)
@@ -135,8 +122,8 @@ lazy val example = withDeps((project in file("example"))
         readmePath
       )
       readmePath
-    })))(core, coreIO, docker, dockerIO)
+    })))(core, docker)
 
 lazy val root = (project in file("."))
-  .aggregate(core, coreIO, docker, dockerIO)
+  .aggregate(core, docker)
   .settings(artefactSettings)

@@ -5,6 +5,7 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicReference
 
 import cats.data.{NonEmptyList, StateT}
+import cats.effect.{Effect, IO}
 import cats.instances.list._
 import cats.instances.map._
 import cats.instances.string._
@@ -36,21 +37,21 @@ package object algebra {
 
   object BindMount {
     def fromTmpFileContent[F[_]](baseDir: Path)(to: Path, ro: Boolean = false)(
-        files: (String, Array[Byte])*)(implicit I: ImpureEffect[F], M: Monad[F]): F[BindMount] = {
+        files: (String, Array[Byte])*)(implicit E: Effect[F], M: Monad[F]): F[BindMount] = {
 
       val mountDir = baseDir.resolve(UUID.randomUUID().toString)
 
       for {
 
-        _ <- I
-          .lift(baseDir.toFile.exists())
-          .ifM(I.unit, I.lift(baseDir.toFile.mkdirs()).void)
+        _ <- E
+          .delay(baseDir.toFile.exists())
+          .ifM(E.unit, E.delay(baseDir.toFile.mkdirs()).void)
 
-        _ <- I.lift(Files.createDirectory(mountDir))
+        _ <- E.delay(Files.createDirectory(mountDir))
 
         _ <- files.toList.traverse_ {
           case (fileName, content) =>
-            I.lift(Files.write(mountDir.resolve(fileName), content))
+            E.delay(Files.write(mountDir.resolve(fileName), content))
         }
       } yield BindMount(mountDir, to, ro)
     }
@@ -91,7 +92,7 @@ package object algebra {
 
     case class Spec(imageName: String,
                     env: Map[String, String],
-                    ports: List[PortSpec],
+                    ports: Set[PortSpec],
                     command: Option[NonEmptyList[String]],
                     mounts: Option[NonEmptyList[BindMount]],
                     name: Option[String] = None)
@@ -129,7 +130,7 @@ package object algebra {
                 ports: Set[Int],
                 command: Option[NonEmptyList[String]],
                 mounts: Option[NonEmptyList[BindMount]]): Spec =
-        Spec(imageName, env, ports.map(PortSpec.AutoAssign).toList, command, mounts)
+        Spec(imageName, env, ports.map(PortSpec.autoAssign), command, mounts)
     }
 
     case class Registered(ref: Container.Ref,
@@ -144,7 +145,7 @@ package object algebra {
         imageName,
         env,
         //TODO: we should retain the port-spec type (i.e. auto, or assign)
-        portMappings.map { case (_, internal) => PortSpec.AutoAssign(internal) }.toList,
+        portMappings.map { case (_, internal) => PortSpec.AutoAssign(internal) },
         command,
         mounts,
         name
@@ -322,19 +323,13 @@ package object algebra {
       } yield env)
   }
 
-  //lawless typeclass to lift a value from a potentially impure effect
-  //into an F
-  abstract class ImpureEffect[F[_]] {
-    def lift[A](a: => A): F[A]
-    val unit: F[Unit] = lift(())
-    def runSync[A](effect: F[A]): A
+  trait UnsafeBlocking[F[_]] {
+    def runSync[A](fa: F[A]): A
   }
 
-  object ImpureEffect {
-    implicit def futureImpure(implicit ec: ExecutionContext): ImpureEffect[Future] =
-      new ImpureEffect[Future]() {
-        override def lift[A](a: => A)             = Future(a)
-        override def runSync[A](fa: Future[A]): A = Await.result(fa, Duration.Inf)
-      }
+  object UnsafeBlocking {
+    implicit val ioRunSync: UnsafeBlocking[IO] = new UnsafeBlocking[IO] {
+      override def runSync[A](io: IO[A]): A = io.unsafeRunSync()
+    }
   }
 }

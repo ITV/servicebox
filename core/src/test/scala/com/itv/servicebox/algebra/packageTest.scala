@@ -3,6 +3,7 @@ package com.itv.servicebox.algebra
 import java.nio.file.{Files, Paths}
 import java.util.UUID
 
+import cats.effect.IO
 import cats.instances.future._
 import org.scalatest.{FreeSpec, Matchers}
 
@@ -20,13 +21,11 @@ class packageTest extends FreeSpec with Matchers {
         val content1 = testContent
         val content2 = testContent
 
-        val bindMount = Await
-          .result(
-            BindMount
-              .fromTmpFileContent[Future](Paths.get(System.getProperty("java.io.tmpdir"), UUID.randomUUID().toString))(
-                targetPath)("example1.txt" -> content1.getBytes, "example2.txt" -> content2.getBytes()),
-            500.millis
-          )
+        val bindMount =
+          BindMount
+            .fromTmpFileContent[IO](Paths.get(System.getProperty("java.io.tmpdir"), UUID.randomUUID().toString))(
+              targetPath)("example1.txt" -> content1.getBytes, "example2.txt" -> content2.getBytes())
+            .unsafeRunSync()
 
         Files.isDirectory(bindMount.from) shouldBe true
         new String(Files.readAllBytes(bindMount.from.resolve("example1.txt"))) should ===(content1)
@@ -36,13 +35,11 @@ class packageTest extends FreeSpec with Matchers {
       "persists a string into a file without creating the base directory" in {
         val content = testContent
 
-        val bindMount = Await
-          .result(
-            BindMount
-              .fromTmpFileContent[Future](Paths.get(System.getProperty("java.io.tmpdir")))(targetPath)(
-                "example.txt" -> content.getBytes),
-            500.millis
-          )
+        val bindMount =
+          BindMount
+            .fromTmpFileContent[IO](Paths.get(System.getProperty("java.io.tmpdir")))(targetPath)(
+              "example.txt" -> content.getBytes)
+            .unsafeRunSync()
 
         Files.isDirectory(bindMount.from) shouldBe true
         new String(Files.readAllBytes(bindMount.from.resolve("example.txt"))) should ===(content)

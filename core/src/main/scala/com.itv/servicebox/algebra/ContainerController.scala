@@ -10,8 +10,17 @@ abstract class ContainerController[F[_]](imageRegistry: ImageRegistry[F],
                                          network: Option[NetworkName])(implicit M: MonadError[F, Throwable]) {
   def containerGroups(spec: Service.Registered[F]): F[ContainerGroups]
 
+  //TODO: revisit this, as it hides parsing errors
   def runningContainers(spec: Service.Registered[F]): F[List[Container.Registered]] =
     containerGroups(spec).map(_.matched)
+//    containerGroups(spec).flatMap { groups =>
+//      if (groups.notMatched.nonEmpty)
+//        M.raiseError(
+//          new IllegalStateException(
+//            s"Some containers are mismatched:\n expected: ${spec.toSpec}\n actual: ${groups.notMatched.head.toSpec}"))
+//      else
+//        M.pure(groups.matched)
+//    }
 
   protected def startContainer(serviceRef: Service.Ref, container: Container.Registered): F[Unit]
 

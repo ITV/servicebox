@@ -11,6 +11,7 @@ import com.itv.servicebox.algebra._
 import org.scalatest.Matchers._
 import ContainerController.{ContainerStates, ContainerWithState}
 import cats.MonadError
+import cats.effect.Effect
 import cats.syntax.flatMap._
 import cats.syntax.functor._
 
@@ -18,7 +19,7 @@ class ContainerController[F[_]](
     imageRegistry: ImageRegistry[F],
     logger: Logger[F],
     network: Option[NetworkName],
-    initialState: ContainerStates = Map.empty)(implicit tag: AppTag, I: ImpureEffect[F], M: MonadError[F, Throwable])
+    initialState: ContainerStates = Map.empty)(implicit tag: AppTag, E: Effect[F], M: MonadError[F, Throwable])
     extends algebra.ContainerController[F](imageRegistry, logger, network) {
 
   private val containersByRef = new AtomicReference[ContainerStates](initialState)
@@ -28,7 +29,7 @@ class ContainerController[F[_]](
       containers <- spec.containers.toList
         .traverse[F, Option[ContainerWithState]] { c =>
           val ref = c.ref(spec.ref)
-          I.lift(containersByRef.get).map(_.get(ref).filter(_.container.toSpec == c.toSpec))
+          E.delay(containersByRef.get).map(_.get(ref).filter(_.container.toSpec == c.toSpec))
         }
         .map(_.flatten)
     } yield {
@@ -42,7 +43,7 @@ class ContainerController[F[_]](
         s"starting container ${container.ref.show} service ref: ${serviceRef.show} with port mappings: ${container.portMappings
           .map { case (host, guest) => s"$host -> $guest" }
           .mkString(", ")}")
-      _ <- I.lift(
+      _ <- E.delay(
         containersByRef.getAndUpdate(_.updated(container.ref, ContainerWithState(container, isRunning = true))))
     } yield ()
 
@@ -54,7 +55,7 @@ class ContainerController[F[_]](
 
   private def shutdownContainer(ref: Container.Ref): F[Unit] =
     for {
-      _ <- I.lift(containersByRef.getAndUpdate { containers =>
+      _ <- E.delay(containersByRef.getAndUpdate { containers =>
         containers
           .get(ref)
           .map { c =>
