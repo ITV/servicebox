@@ -15,7 +15,7 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 
 class KVStoreTest extends FlatSpec with Matchers with BeforeAndAfterAll {
-  implicit val tag: AppTag = AppTag("com.example", "some-app")
+  implicit val tag: AppTag = AppTag("com", "example")
 
   private lazy val runnerAndConfig: (Runner[IO], Config) = {
     val basePostgresConfig = DbConfig("localhost", 5432, "kvstore", "postgres", "")

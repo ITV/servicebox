@@ -59,33 +59,34 @@ class DockerContainerController[F[_]](
     } yield ()
   }
 
-  override def stopContainer(serviceRef: Service.Ref, containerRef: Container.Ref): F[Unit] =
+  override def removeContainer(serviceRef: Service.Ref, containerRef: Container.Ref): F[Unit] =
     forceRm(queryParams(serviceRef, containerRef.some): _*)
 
   private[docker] def removeContainers =
-    forceRm(ListContainersParam.withStatusRunning(), ListContainersParam.withLabel(AppTagLabel, tag.show))
+    forceRm(ListContainersParam.withLabel(AppTagLabel, tag.show), ListContainersParam.allContainers())
 
   private def forceRm(params: ListContainersParam*): F[Unit] =
     for {
       containers <- I
         .lift(dockerClient.listContainers(params: _*))
         .map(_.asScala.toList)
+      _ <- logger.warn(s"removing containers: ${containers.map(_.id())}")
       _ <- containers.traverse(c => I.lift(dockerClient.removeContainer(c.id, RemoveContainerParam.forceKill())))
       _ <- I.lift(logger.info(s"stopping ${containers.size} containers"))
 
     } yield ()
 
   private def queryParams(serviceRef: Service.Ref, containerRef: Option[Container.Ref]): Seq[ListContainersParam] =
-    ListContainersParam.withStatusRunning() +: containerLabels(serviceRef, containerRef, hasAssignedName = false).map {
+    containerLabels(serviceRef, containerRef, assignedName = None).map {
       case (k, v) => ListContainersParam.withLabel(k, v)
-    }.toSeq
+    }.toSeq :+ ListContainersParam.allContainers()
 
   private def containerLabels(serviceRef: Service.Ref,
                               containerRef: Option[Container.Ref],
-                              hasAssignedName: Boolean): Map[String, String] =
+                              assignedName: Option[String]): Map[String, String] =
     Map(ServiceRefLabel -> serviceRef.show, AppTagLabel -> tag.show) ++ containerRef
       .map(ref => Map(ContainerRefLabel -> ref.show))
-      .getOrElse(Map.empty) ++ (if (hasAssignedName) Map(AssignedName -> "true") else Map.empty)
+      .getOrElse(Map.empty) ++ assignedName.fold(Map.empty[String, String])(name => Map(AssignedName -> name))
 
   private def containerConfig(serviceRef: Service.Ref, container: Container.Registered): ContainerConfig = {
     val pbs = (mutable.Map.empty[Int, Int] ++ container.portMappings).map {
@@ -98,9 +99,7 @@ class DockerContainerController[F[_]](
       Bind.builder().from(mb.from.toAbsolutePath.toString).to(mb.to.toAbsolutePath.toString).build()
     }
 
-    val labels = mutable.Map.empty[String, String] ++ containerLabels(serviceRef,
-                                                                      container.ref.some,
-                                                                      hasAssignedName = true)
+    val labels = mutable.Map.empty[String, String] ++ containerLabels(serviceRef, container.ref.some, container.name)
 
     val hostConfig = {
       val config = HostConfig

@@ -46,7 +46,7 @@ class ContainerController[F[_]](
         containersByRef.getAndUpdate(_.updated(container.ref, ContainerWithState(container, isRunning = true))))
     } yield ()
 
-  override def stopContainer(serviceRef: Service.Ref, containerRef: Container.Ref) =
+  override def removeContainer(serviceRef: Service.Ref, containerRef: Container.Ref) =
     for {
       _ <- logger.info(s"stopping container ${containerRef.show} with service ref: ${serviceRef.show}")
       _ <- shutdownContainer(containerRef)

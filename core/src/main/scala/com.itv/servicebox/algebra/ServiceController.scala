@@ -24,7 +24,7 @@ class ServiceController[F[_]](logger: Logger[F],
         s"found ${containerGroups.notMatched.size} running containers which do not match the current spec for ${spec.ref}: ${containerGroups.notMatched} ...")
 
       toStop = containerGroups.notMatched
-      _ <- toStop.traverse(c => ctrl.stopContainer(registered.ref, c.ref))
+      _ <- toStop.traverse(c => ctrl.removeContainer(registered.ref, c.ref))
 
       toStart = registered.containers.filterNot(c => containerGroups.matched.exists(_.ref == c.ref))
       _ <- logger.debug(
@@ -46,12 +46,12 @@ class ServiceController[F[_]](logger: Logger[F],
       _ <- ctrl.fetchImageAndStartContainer(service.ref, container)
     } yield ()
 
-  def stop(service: Service.Registered[F]): F[Unit] = {
-    def stopAndUpdateRegistry(serviceRef: Service.Ref, container: Container.Registered) =
-      ctrl.stopContainer(serviceRef, container.ref) >> registry.deregister(serviceRef, container.ref).void
+  def tearDown(service: Service.Registered[F]): F[Unit] = {
+    def rmUpdatingRegistry(serviceRef: Service.Ref, container: Container.Registered) =
+      ctrl.removeContainer(serviceRef, container.ref) >> registry.deregister(serviceRef, container.ref).void
     for {
       containers <- ctrl.runningContainers(service)
-      _          <- containers.traverse(stopAndUpdateRegistry(service.ref, _))
+      _          <- containers.traverse(rmUpdatingRegistry(service.ref, _))
     } yield ()
   }
 

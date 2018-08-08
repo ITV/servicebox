@@ -103,7 +103,7 @@ scala> val config = Postgres.DbConfig("localhost", "user", "pass", 5432)
 config: Postgres.DbConfig = DbConfig(localhost,user,pass,5432)
 
 scala> val postgresSpec = Postgres(config)
-postgresSpec: com.itv.servicebox.algebra.Service.Spec[cats.effect.IO] = Spec(Postgres,NonEmptyList(Spec(postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),List(AutoAssign(5432)),None,None)),ReadyCheck(Postgres$$$Lambda$7824/886404917@da92851,50 milliseconds,5 seconds,None),Set())
+postgresSpec: com.itv.servicebox.algebra.Service.Spec[cats.effect.IO] = Spec(Postgres,NonEmptyList(Spec(postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),List(AutoAssign(5432)),None,None,None)),ReadyCheck(Postgres$$$Lambda$7239/236698115@5169bbf2,50 milliseconds,5 seconds,None),Set())
 
 scala> //evaluate only once to prevent shutdown hook to be fired multiple times
      | lazy val runner = {
@@ -121,7 +121,7 @@ defined in the spec, and a `setUp`:
 
 ```scala
 scala> val registeredServices = runner.setUp.unsafeRunSync
-registeredServices: com.itv.servicebox.algebra.ServicesByRef[cats.effect.IO] = ServicesByRef(Map(Ref(com.example/some-app/Postgres) -> Registered(Postgres,NonEmptyList(Registered(Ref(com.example/some-app/Postgres/postgres:9.5.4),postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),Set((49162,5432)),None,None)),Endpoints(NonEmptyList(Location(127.0.0.1,49162,5432))),ReadyCheck(Postgres$$$Lambda$7824/886404917@da92851,50 milliseconds,5 seconds,None),Set())))
+registeredServices: com.itv.servicebox.algebra.ServicesByRef[cats.effect.IO] = ServicesByRef(Map(Ref(com.example/some-app/Postgres) -> Registered(Postgres,NonEmptyList(Registered(Ref(com.example/some-app/Postgres/postgres:9.5.4),postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),Set((49162,5432)),None,None,None)),Endpoints(NonEmptyList(Location(127.0.0.1,49162,5432))),ReadyCheck(Postgres$$$Lambda$7239/236698115@5169bbf2,50 milliseconds,5 seconds,None),Set())))
 ```
 
 This returns us a wrapper of a `Map[Service.Ref, Service.Registered[F]]`

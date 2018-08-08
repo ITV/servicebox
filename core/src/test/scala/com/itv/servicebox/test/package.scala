@@ -14,7 +14,7 @@ import scala.concurrent.duration._
 package object test {
   object TestData {
     val portRange       = 49162 to 49192
-    implicit val appTag = AppTag("org", "test")
+    implicit val appTag = AppTag("com", "example")
 
     def constantReady[F[_]](label: String)(implicit A: Applicative[F]): Service.ReadyCheck[F] =
       Service.ReadyCheck[F](_ => A.unit, 5.millis, 1.second)

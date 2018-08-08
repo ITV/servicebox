@@ -18,7 +18,7 @@ abstract class ContainerController[F[_]](imageRegistry: ImageRegistry[F],
   def fetchImageAndStartContainer(serviceRef: Service.Ref, container: Container.Registered): F[Unit] =
     imageRegistry.fetchUnlessExists(container.imageName) >> startContainer(serviceRef, container)
 
-  def stopContainer(serviceRef: Service.Ref, container: Container.Ref): F[Unit]
+  def removeContainer(serviceRef: Service.Ref, container: Container.Ref): F[Unit]
 }
 object ContainerController {
   case class ContainerGroups(matched: List[Container.Registered], notMatched: List[Container.Registered])
