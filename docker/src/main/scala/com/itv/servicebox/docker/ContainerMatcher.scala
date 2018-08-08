@@ -25,15 +25,15 @@ object ContainerMatcher extends Matcher[ContainerWithDetails] {
       containerPortMappings(matched.info),
       maybeCmd(matched, expected),
       bindMounts(matched.info),
-      assignedContainerName(matched, expected.name.isDefined)
+      expected.name.flatMap(assignedContainerName(matched, _))
     )
 
     matcherResult(parsed)
   }
 
-  private def assignedContainerName(matched: ContainerWithDetails, expectedHasName: Boolean) =
+  private def assignedContainerName(matched: ContainerWithDetails, expectedName: String) =
     Option(matched.info.name.replaceFirst("^\\/", "")).filter(_ =>
-      expectedHasName && matched.container.labels().asScala.exists(_._1 == AssignedName))
+      matched.container.labels().asScala.exists(_ == AssignedName -> expectedName))
 
   private def maybeCmd(matched: ContainerWithDetails, expected: Container.Registered) = {
     val entrypoint = matched.info.config.entrypoint.asScala.toList

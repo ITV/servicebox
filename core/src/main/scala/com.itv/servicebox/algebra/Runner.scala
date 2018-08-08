@@ -83,7 +83,7 @@ class Runner[F[_]](srvCtrl: ServiceController[F], networkCtrl: NetworkController
       alreadyDone     <- I.lift(tearDownCompleted.get())
       maybeRegistered <- registry.lookup(spec)
       _ <- maybeRegistered.filterNot(srv => alreadyDone(srv.ref)).fold(M.unit) { srv =>
-        srvCtrl.stop(srv) >> I.lift(tearDownCompleted.getAndUpdate(_ + srv.ref))
+        srvCtrl.tearDown(srv) >> I.lift(tearDownCompleted.getAndUpdate(_ + srv.ref))
       }
       _ <- I
         .lift(tearDownCompleted.get)

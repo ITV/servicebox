@@ -7,7 +7,7 @@ import com.itv.servicebox.algebra._
 import com.itv.servicebox.interpreter.FutureLogger
 import com.itv.servicebox.test.{Dependencies, RunnerTest, TestData, TestEnv}
 import com.spotify.docker.client.DefaultDockerClient
-import cats.syntax.flatMap._
+import cats.syntax.apply._
 import org.scalatest.{Assertion, BeforeAndAfterAll}
 
 import scala.concurrent.duration.Duration
@@ -36,5 +36,5 @@ class RunnerWithDockerContainersFutureTest extends RunnerTest[Future] with Befor
     new Dependencies(logger, imageRegistry, networkCtrl, containerCtrl, Scheduler.futureScheduler)
 
   override def withServices(testData: TestData[Future])(f: TestEnv[Future] => Future[Assertion])(implicit tag: AppTag) =
-    containerCtrl.removeContainers >> networkCtrl.removeNetwork() >> super.withServices(testData)(f)
+    containerCtrl.removeContainers *> networkCtrl.removeNetwork *> super.withServices(testData)(f)
 }

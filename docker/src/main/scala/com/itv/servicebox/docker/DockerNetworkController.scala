@@ -43,13 +43,13 @@ class DockerNetworkController[F[_]](dockerClient: DefaultDockerClient, logger: L
         .map(_.name())
         .toList)
 
-  override def removeNetwork(): F[Unit] =
-    for {
-      networkExists <- networks.map(_.exists(_ == _networkName))
-      _ <- if (networkExists)
-        I.lift(logger.info(s"removing network '${_networkName}'")) *> I.lift(dockerClient.removeNetwork(config.name()))
-      else I.lift(logger.debug(s"cannot remove network ${_networkName}. It doesn't exist!"))
-    } yield ()
+  override def removeNetwork(): F[Unit] = I.unit
+  for {
+    networkExists <- networks.map(_.exists(_ == _networkName))
+    _ <- if (networkExists)
+      I.lift(logger.info(s"removing network '${_networkName}'")) *> I.lift(dockerClient.removeNetwork(config.name()))
+    else I.lift(logger.debug(s"cannot remove network ${_networkName}. It doesn't exist!"))
+  } yield ()
 
   override def networkName: Option[NetworkName] = Some(config.name())
 }
