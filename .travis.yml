@@ -5,7 +5,7 @@ scala:
 jdk:
 - oraclejdk8
 script:
-- sbt ++$TRAVIS_SCALA_VERSION ";core/test;coreIO/test;docker/test;dockerIO/test;example/test;example/copyReadme"
+- sbt ++$TRAVIS_SCALA_VERSION ";core/test;docker/test;example/test;example/copyReadme"
 - ci/publish.sh
 env:
   global:

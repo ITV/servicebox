@@ -1,6 +1,7 @@
 package com.itv.servicebox
 
 import cats.MonadError
+import cats.effect.Effect
 import com.itv.servicebox.algebra.{Runner => RunnerAlg, _}
 import com.spotify.docker.client.DefaultDockerClient
 import com.spotify.docker.client.messages.{ContainerInfo, Container => JavaContainer}
@@ -18,7 +19,7 @@ package object docker {
   def runner[F[_]](portRange: Range = InMemoryServiceRegistry.DefaultPortRange,
                    client: DefaultDockerClient = DefaultDockerClient.fromEnv().build())(services: Service.Spec[F]*)(
       implicit
-      I: ImpureEffect[F],
+      E: Effect[F],
       M: MonadError[F, Throwable],
       logger: Logger[F],
       scheduler: Scheduler[F],

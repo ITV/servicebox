@@ -1,8 +1,9 @@
 package com.itv.servicebox
 
 import cats.data.NonEmptyList
+import cats.effect.Effect
 import cats.{Applicative, Functor, MonadError}
-import com.itv.servicebox.algebra.{ImpureEffect, InMemoryServiceRegistry, _}
+import com.itv.servicebox.algebra._
 import org.scalatest.Assertion
 import org.scalatest.Matchers._
 import cats.syntax.show._
@@ -88,7 +89,7 @@ package object test {
       val imageRegistry: ImageRegistry[F],
       val networkController: TestNetworkController[F],
       val containerController: ContainerController[F],
-      val scheduler: Scheduler[F])(implicit I: ImpureEffect[F], M: MonadError[F, Throwable], tag: AppTag) {
+      val scheduler: Scheduler[F])(implicit E: Effect[F], M: MonadError[F, Throwable], tag: AppTag) {
 
     def serviceRegistry(portRange: Range): ServiceRegistry[F] =
       new InMemoryServiceRegistry[F](portRange, logger)
@@ -107,13 +108,13 @@ package object test {
                            serviceRegistry: ServiceRegistry[F],
                            runner: Runner[F],
                            runtimeInfo: Map[Service.Ref, Service.RuntimeInfo],
-                           preExisting: List[RunningContainer])(implicit I: ImpureEffect[F], F: Functor[F])
+                           preExisting: List[RunningContainer])(implicit I: Effect[F], F: Functor[F])
 
   def withRunningServices[F[_]](deps: Dependencies[F])(testData: TestData[F])(runAssertion: TestEnv[F] => F[Assertion])(
       implicit appTag: AppTag,
       ec: ExecutionContext,
       M: MonadError[F, Throwable],
-      I: ImpureEffect[F]): F[Assertion] = {
+      I: Effect[F]): F[Assertion] = {
 
     val serviceRegistry = deps.serviceRegistry(testData.portRange)
     val srvCtrl         = deps.serviceController(serviceRegistry)

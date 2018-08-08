@@ -29,10 +29,7 @@ object Lenses {
 
   def mountFrom: Lens[BindMount, Path] = GenLens[BindMount](_.from)
 
-  def containerPorts: Lens[Container.Spec, List[PortSpec]] = GenLens[Container.Spec](_.ports)
-
-  def eachContainerPort[F[_]]: Traversal[Service.Spec[F], PortSpec] =
-    eachContainer[F].composeTraversal(containerPorts composeTraversal each)
+  def containerPorts: Lens[Container.Spec, Set[PortSpec]] = GenLens[Container.Spec](_.ports)
 
   def eachContainer[F[_]]: Traversal[Service.Spec[F], Container.Spec] = containers[F] composeTraversal each
 

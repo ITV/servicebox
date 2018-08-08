@@ -51,6 +51,7 @@ class ServiceController[F[_]](logger: Logger[F],
       ctrl.removeContainer(serviceRef, container.ref) >> registry.deregister(serviceRef, container.ref).void
     for {
       containers <- ctrl.runningContainers(service)
+      _          <- logger.info(s"found ${containers.size} containers to delete ...")
       _          <- containers.traverse(rmUpdatingRegistry(service.ref, _))
     } yield ()
   }

@@ -2,12 +2,11 @@ package com.itv.servicebox.docker
 
 import cats.effect.IO
 import com.itv.servicebox.algebra._
-import com.itv.servicebox.interpreter.IOLogger
+import com.itv.servicebox.interpreter.{IOLogger, ioScheduler}
 import com.itv.servicebox.test.{Dependencies, RunnerTest, TestData, TestEnv}
 import com.spotify.docker.client.DefaultDockerClient
-import cats.syntax.apply._
 import org.scalatest.{Assertion, BeforeAndAfterAll}
-import com.itv.servicebox.interpreter.{ioEffect, ioScheduler}
+import cats.syntax.apply._
 
 import scala.concurrent.ExecutionContext.Implicits.global
 
