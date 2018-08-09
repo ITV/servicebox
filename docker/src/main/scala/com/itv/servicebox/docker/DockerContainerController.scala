@@ -2,24 +2,24 @@ package com.itv.servicebox.docker
 
 import cats.MonadError
 import cats.effect.Effect
+import cats.instances.list._
 import cats.syntax.flatMap._
+import cats.syntax.foldable._
 import cats.syntax.functor._
+import cats.syntax.option._
+import cats.syntax.show._
+import cats.syntax.traverse._
 import com.itv.servicebox.algebra
+import com.itv.servicebox.algebra.Container.Matcher
 import com.itv.servicebox.algebra.ContainerController.ContainerGroups
 import com.itv.servicebox.algebra._
 import com.spotify.docker.client.DefaultDockerClient
 import com.spotify.docker.client.DockerClient.{ListContainersParam, RemoveContainerParam}
+import com.spotify.docker.client.messages.HostConfig.Bind
 import com.spotify.docker.client.messages.{Container => JavaContainer, _}
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
-import cats.instances.list._
-import cats.instances.boolean._
-import cats.syntax.show._
-import cats.syntax.traverse._
-import cats.syntax.apply._
-import cats.syntax.option._
-import com.spotify.docker.client.messages.HostConfig.Bind
 
 class DockerContainerController[F[_]](
     dockerClient: DefaultDockerClient,
@@ -30,18 +30,27 @@ class DockerContainerController[F[_]](
   override def containerGroups(service: Service.Registered[F]) =
     for {
       runningContainersByImageName <- runningContainersByImageName(service.toSpec)
-    } yield {
-      service.containers.foldLeft(ContainerGroups.Empty) { (groups, container) =>
-        val (matched, notMatched) = runningContainersByImageName
-          .getOrElse(container.imageName, Nil)
-          .map { javaContainer =>
-            val info = dockerClient.inspectContainer(javaContainer.id())
-            ContainerMatcher(ContainerWithDetails(javaContainer, info), container)
-          }
-          .partition(_.isSuccess)
+      results <- service.containers.foldM(List.empty[Matcher.Result[ContainerWithDetails]]) {
+        case (acc, c) =>
+          runningContainersByImageName
+            .getOrElse(c.imageName, Nil)
+            .traverse { javaContainer =>
+              E.delay(dockerClient.inspectContainer(javaContainer.id())).map { info =>
+                ContainerMatcher(ContainerWithDetails(javaContainer, info), c)
+              }
+            }
 
-        ContainerGroups(matched.map(_.actual), notMatched.map(_.actual))
       }
+
+    } yield {
+      ContainerGroups(
+        results.filter(_.isSuccess).map(_.actual),
+        results.collect {
+          case Matcher.Mismatch(_, _, actual, diff) =>
+            actual -> diff
+        }
+      )
+
     }
 
   def runningContainersByImageName(spec: Service.Spec[F]): F[Map[String, List[JavaContainer]]] =

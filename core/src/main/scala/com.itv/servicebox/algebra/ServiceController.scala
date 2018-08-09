@@ -21,9 +21,12 @@ class ServiceController[F[_]](logger: Logger[F],
       containerGroups <- ctrl.containerGroups(registered)
 
       _ <- logger.debug(
-        s"found ${containerGroups.notMatched.size} running containers which do not match the current spec for ${spec.ref}: ${containerGroups.notMatched} ...")
+        s"found ${containerGroups.notMatched.size} running containers which do not match the current spec for ${spec.ref}")
+      _ <- containerGroups.notMatched.map(_._2).traverse { diff =>
+        logger.debug(s"diff: ${diff.show}")
+      }
 
-      toStop = containerGroups.notMatched
+      toStop = containerGroups.notMatched.map(_._1)
       _ <- toStop.traverse(c => ctrl.removeContainer(registered.ref, c.ref))
 
       toStart = registered.containers.filterNot(c => containerGroups.matched.exists(_.ref == c.ref))
