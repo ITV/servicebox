@@ -30,7 +30,6 @@ val serviceboxVersion = "<CurrentVersion>"
 libraryDependencies ++= Seq(
   "com.itv" %% "servicebox-core" % serviceboxVersion,
   "com.itv" %% "servicebox-docker" % serviceboxVersion, //docker support
-  "com.itv" %% "servicebox-docker-io" % serviceboxVersion, //optional module to use `cats.effect.IO` instead of `scala.concurrent.Future`
 )
 ```
 

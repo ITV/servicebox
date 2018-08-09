@@ -30,7 +30,6 @@ val serviceboxVersion = "<CurrentVersion>"
 libraryDependencies ++= Seq(
   "com.itv" %% "servicebox-core" % serviceboxVersion,
   "com.itv" %% "servicebox-docker" % serviceboxVersion, //docker support
-  "com.itv" %% "servicebox-docker-io" % serviceboxVersion, //optional module to use `cats.effect.IO` instead of `scala.concurrent.Future`
 )
 ```
 
@@ -103,7 +102,7 @@ scala> val config = Postgres.DbConfig("localhost", "user", "pass", 5432)
 config: Postgres.DbConfig = DbConfig(localhost,user,pass,5432)
 
 scala> val postgresSpec = Postgres(config)
-postgresSpec: com.itv.servicebox.algebra.Service.Spec[cats.effect.IO] = Spec(Postgres,NonEmptyList(Spec(postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),Set(AutoAssign(5432)),None,None,None)),ReadyCheck(Postgres$$$Lambda$22444/182022601@3405e0be,50 milliseconds,5 seconds,None),Set())
+postgresSpec: com.itv.servicebox.algebra.Service.Spec[cats.effect.IO] = Spec(Postgres,NonEmptyList(Spec(postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),Set(AutoAssign(5432)),None,None,None)),ReadyCheck(Postgres$$$Lambda$11934/1258186473@28be21b9,50 milliseconds,5 seconds,None),Set())
 
 scala> //evaluate only once to prevent shutdown hook to be fired multiple times
      | lazy val runner = {
@@ -121,7 +120,7 @@ defined in the spec, and a `setUp`:
 
 ```scala
 scala> val registeredServices = runner.setUp.unsafeRunSync
-registeredServices: com.itv.servicebox.algebra.ServicesByRef[cats.effect.IO] = ServicesByRef(Map(Ref(com.example/some-app/Postgres) -> Registered(Postgres,NonEmptyList(Registered(Ref(com.example/some-app/Postgres/postgres:9.5.4),postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),Set((49162,5432)),None,None,None)),Endpoints(NonEmptyList(Location(127.0.0.1,49162,5432))),ReadyCheck(Postgres$$$Lambda$22444/182022601@3405e0be,50 milliseconds,5 seconds,None),Set())))
+registeredServices: com.itv.servicebox.algebra.ServicesByRef[cats.effect.IO] = ServicesByRef(Map(Ref(com.example/some-app/Postgres) -> Registered(Postgres,NonEmptyList(Registered(Ref(com.example/some-app/Postgres/postgres:9.5.4),postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),Set((49163,5432)),None,None,None)),Endpoints(NonEmptyList(Location(127.0.0.1,49163,5432))),ReadyCheck(Postgres$$$Lambda$11934/1258186473@28be21b9,50 milliseconds,5 seconds,None),Set())))
 ```
 
 This returns us a wrapper of a `Map[Service.Ref, Service.Registered[F]]`
@@ -129,7 +128,7 @@ providing us with some convenience methods to resolve running services/container
 
 ```scala
 scala> val pgLocation = registeredServices.locationFor(postgresSpec.ref, 5432).unsafeRunSync
-pgLocation: com.itv.servicebox.algebra.Location = Location(127.0.0.1,49162,5432)
+pgLocation: com.itv.servicebox.algebra.Location = Location(127.0.0.1,49163,5432)
 ```
 
 Notice that, while in the `Postgres` spec we define a container port, the library will automatically bind it to
@@ -138,7 +137,7 @@ in your tests, you will have to point your app to the dynamically assigned host/
 
 ```scala
 scala> pgLocation.port
-res1: Int = 49162
+res1: Int = 49163
 ```
 
 ## Detailed example
