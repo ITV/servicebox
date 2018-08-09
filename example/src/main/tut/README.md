@@ -77,7 +77,7 @@ object Postgres {
       NonEmptyList.of(
         Container.Spec("postgres:9.5.4",
                        Map("POSTGRES_DB" -> config.dbName, "POSTGRES_PASSWORD" -> config.password),
-                       Set(5432),
+                       Set(PortSpec.autoAssign(5432)),
                        None,
                        None)),
       Service.ReadyCheck[IO](dbConnect, 50.millis, 5.seconds)
