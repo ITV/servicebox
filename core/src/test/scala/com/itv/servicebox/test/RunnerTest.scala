@@ -67,7 +67,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext,
     withServices(TestData(portRange, List(spec), preExisting)) { env =>
       for {
         service           <- env.serviceRegistry.unsafeLookup(spec)
-        runningContainers <- env.deps.containerController.runningContainers(service)
+        runningContainers <- env.deps.containerController.matchedContainers(service)
         assertion         <- f(env, runningContainers)
       } yield assertion
     }
@@ -340,7 +340,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext,
         withServices(TestData(rabbitSpec)) { env =>
           for {
             service           <- env.serviceRegistry.unsafeLookup(rabbitSpec)
-            runningContainers <- env.deps.containerController.runningContainers(service)
+            runningContainers <- env.deps.containerController.matchedContainers(service)
             readyCheckDuration = env.runtimeInfo(service.ref).readyCheckDuration
           } yield {
             service.toSpec should ===(rabbitSpec)
@@ -362,7 +362,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext,
           service           <- env.serviceRegistry.unsafeLookup(spec)
           _                 <- env.runner.tearDown
           maybeSrv          <- env.serviceRegistry.lookup(service.ref)
-          runningContainers <- env.deps.containerController.runningContainers(service)
+          runningContainers <- env.deps.containerController.matchedContainers(service)
           networks          <- env.deps.networkController.networks
         } yield {
           maybeSrv should ===(None)

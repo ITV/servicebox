@@ -59,7 +59,6 @@ package object algebra {
     }
   }
 
-  //TODO: provide some builder methods
   private[algebra] sealed trait Container {
     def imageName: String
     def ref(ref: Service.Ref): Container.Ref = Container.Ref(s"${ref.show}/$imageName")
@@ -176,7 +175,7 @@ package object algebra {
       def apply(a: Container.Spec, b: Container.Spec): Option[Diff] = {
         implicit val portSpecEq: Eq[PortSpec] = PortSpec.onlyInternalEq
 
-        if (a == b) None
+        if (a === b) None
         else {
           NonEmptyList
             .fromList(
@@ -261,7 +260,6 @@ package object algebra {
       }
     }
 
-//
     trait Matcher[Repr] {
       def apply(matched: Repr, expected: Container.Registered): Matcher.Result[Repr]
     }
@@ -272,6 +270,7 @@ package object algebra {
         def actual: Container.Registered
         def isSuccess: Boolean
       }
+
       object Result {
         def apply[Repr](matched: Repr, expected: Container.Registered)(actual: Container.Registered): Result[Repr] =
           Diff(actual.toSpec, expected.toSpec)
@@ -283,7 +282,6 @@ package object algebra {
         override val isSuccess = true
       }
 
-      //TODO: consider adding some diffing here
       case class Mismatch[Repr](matched: Repr, expected: Container.Registered, actual: Container.Registered, diff: Diff)
           extends Result[Repr] {
         override val isSuccess = false
