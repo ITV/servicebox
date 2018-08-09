@@ -35,12 +35,13 @@ class KVStoreTest extends FlatSpec with Matchers with BeforeAndAfterAll {
       val spec = Service.Spec[IO](
         "Postgres",
         NonEmptyList.of(
-          Container.Spec("postgres:9.5.4",
-                         Map("POSTGRES_DB"       -> basePostgresConfig.dbName,
-                             "POSTGRES_PASSWORD" -> basePostgresConfig.password),
-                         Set(port),
-                         None,
-                         None)),
+          Container.Spec(
+            "postgres:9.5.4",
+            Map("POSTGRES_DB" -> basePostgresConfig.dbName, "POSTGRES_PASSWORD" -> basePostgresConfig.password),
+            Set(PortSpec.autoAssign(port)),
+            None,
+            None
+          )),
         Service.ReadyCheck[IO](dbConnect, 10.millis, 30.seconds)
       )
     }
@@ -76,7 +77,7 @@ class KVStoreTest extends FlatSpec with Matchers with BeforeAndAfterAll {
             Map("INFLUXDB_DB"            -> baseInfluxConfig.dbName,
                 "INFLUXDB_USER"          -> baseInfluxConfig.user,
                 "INFLUXDB_USER_PASSWORD" -> baseInfluxConfig.password),
-            Set(httpPort, udpPort),
+            Set(PortSpec.autoAssign(httpPort), PortSpec.autoAssign(udpPort)),
             None,
             None
           )

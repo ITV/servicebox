@@ -137,14 +137,6 @@ package object algebra {
 
     object Spec {
       implicit val eq: Eq[Spec] = cats.derived.semi.eq[Spec]
-
-      //TODO: delete this
-      def apply(imageName: String,
-                env: Map[String, String],
-                ports: Set[Int],
-                command: Option[NonEmptyList[String]],
-                mounts: Option[NonEmptyList[BindMount]]): Spec =
-        Spec(imageName, env, ports.map(PortSpec.autoAssign), command, mounts)
     }
 
     case class Registered(ref: Container.Ref,
@@ -174,7 +166,7 @@ package object algebra {
       case class Entry(fieldName: String, message: String)
       object Entry {
 
-        implicit val show: Show[Entry] = Show.show(e => s"\t - ${e.fieldName}: ${e.message}")
+        implicit val show: Show[Entry] = Show.show(e => s" - ${e.fieldName}: ${e.message}")
 
         def apply[T](fieldName: String, actual: T, expected: T)(implicit eq: Eq[T], diff: DiffShow[T]): Option[Entry] =
           if (actual === expected) None
@@ -221,9 +213,9 @@ package object algebra {
         implicit val show: Show[Report] = Show.show[Report] { r =>
           def fmtNel(nel: NonEmptyList[String]) = nel.mkString_("\n", "\n", "")
           List(
-            r.missing.map(nel => s"\t\tUnexpected: ${fmtNel(nel)}"),
-            r.different.map(nel => s"\t\tMismatches: ${fmtNel(nel)}"),
-            r.unexpected.map(nel => s"\t\tUnexpected: ${fmtNel(nel)}")
+            r.missing.map(nel => s"  Unexpected: ${fmtNel(nel)}"),
+            r.different.map(nel => s"  Mismatches: ${fmtNel(nel)}"),
+            r.unexpected.map(nel => s"  Unexpected: ${fmtNel(nel)}")
           ).flatten.mkString("\n", "\n", "")
         }
       }
@@ -236,7 +228,7 @@ package object algebra {
         instance[Map[K, V]] { (actual, expected) =>
           val mismatches = expected.toList.flatMap {
             case (k, v) =>
-              actual.get(k).filter(_ != v).map(v1 => s"\t\t\t${k.show}: ${vShow.showDiff(v1, v)}")
+              actual.get(k).filter(_ != v).map(v1 => s"   ${k.show}: ${vShow.showDiff(v1, v)}")
           }
 
           Report
