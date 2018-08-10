@@ -6,16 +6,12 @@ import java.util.concurrent.atomic.AtomicReference
 
 import cats.data.{NonEmptyList, StateT}
 import cats.effect.{Effect, IO}
-import cats.instances.list._
-import cats.instances.map._
-import cats.instances.string._
-import cats.instances.either._
+import cats.instances.all._
 import cats.syntax.all._
-import cats.{ApplicativeError, Monad, Show}
+import cats.{ApplicativeError, Eq, Monad, Show}
 import monocle.function.all._
 
-import scala.concurrent.duration.{Duration, FiniteDuration}
-import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.concurrent.duration.FiniteDuration
 
 package object algebra {
   private val L = Lenses
@@ -36,6 +32,12 @@ package object algebra {
   case class BindMount(from: Path, to: Path, readOnly: Boolean = false)
 
   object BindMount {
+    implicit val pathEq: Eq[Path]  = Eq.by(_.toAbsolutePath)
+    implicit val eq: Eq[BindMount] = Eq.fromUniversalEquals[BindMount] //cats.derived.semi.eq[BindMount]
+    implicit val show: Show[BindMount] = Show.show { bm =>
+      s"${bm.from} -> ${bm.to} ${if (bm.readOnly) "[RO]" else ""}"
+    }
+
     def fromTmpFileContent[F[_]](baseDir: Path)(to: Path, ro: Boolean = false)(
         files: (String, Array[Byte])*)(implicit E: Effect[F], M: Monad[F]): F[BindMount] = {
 
@@ -57,7 +59,6 @@ package object algebra {
     }
   }
 
-  //TODO: provide some builder methods
   private[algebra] sealed trait Container {
     def imageName: String
     def ref(ref: Service.Ref): Container.Ref = Container.Ref(s"${ref.show}/$imageName")
@@ -73,6 +74,15 @@ package object algebra {
   }
 
   object PortSpec {
+
+    val onlyInternalEq: Eq[PortSpec] = Eq.by(_.internalPort)
+
+    implicit val show: Show[PortSpec] = Show.show {
+      case PortSpec.Assign(internal, host) => s"$host:$internal"
+      case PortSpec.AutoAssign(internal)   => s":$internal"
+    }
+    implicit val eq: Eq[PortSpec] = Eq.fromUniversalEquals[PortSpec] //cats.derived.semi.eq[PortSpec]
+
     case class AutoAssign(internalPort: Int) extends PortSpec {
       override def autoAssigned = true
     }
@@ -116,7 +126,7 @@ package object algebra {
               ref(serviceRef),
               imageName,
               env,
-              mappings.toSet,
+              mappings,
               command,
               mounts,
               name
@@ -125,12 +135,7 @@ package object algebra {
     }
 
     object Spec {
-      def apply(imageName: String,
-                env: Map[String, String],
-                ports: Set[Int],
-                command: Option[NonEmptyList[String]],
-                mounts: Option[NonEmptyList[BindMount]]): Spec =
-        Spec(imageName, env, ports.map(PortSpec.autoAssign), command, mounts)
+      implicit val eq: Eq[Spec] = cats.derived.semi.eq[Spec]
     }
 
     case class Registered(ref: Container.Ref,
@@ -152,6 +157,109 @@ package object algebra {
       ).withAbsolutePaths
     }
 
+    case class Diff(toNel: NonEmptyList[Diff.Entry])
+
+    object Diff {
+      implicit val show: Show[Diff] = Show.show[Diff](_.toNel.mkString_("\n", "\n", "\n"))
+
+      case class Entry(fieldName: String, message: String)
+      object Entry {
+
+        implicit val show: Show[Entry] = Show.show(e => s" - ${e.fieldName}: ${e.message}")
+
+        def apply[T](fieldName: String, actual: T, expected: T)(implicit eq: Eq[T], diff: DiffShow[T]): Option[Entry] =
+          if (actual === expected) None
+          else Some(Entry(fieldName, diff.showDiff(actual, expected)))
+      }
+
+      def apply(a: Container.Spec, b: Container.Spec): Option[Diff] = {
+        implicit val portSpecEq: Eq[PortSpec] = PortSpec.onlyInternalEq
+
+        if (a === b) None
+        else {
+          NonEmptyList
+            .fromList(
+              List(
+                Entry("imageName", a.imageName, b.imageName),
+                Entry("env", a.env, b.env),
+                Entry("ports", a.ports, b.ports),
+                Entry("command", a.command, b.command),
+                Entry("mounts", a.mounts, b.mounts)
+              ).flatten)
+            .map(Diff(_))
+        }
+      }
+    }
+
+    trait DiffShow[T] {
+      def showDiff(actual: T, expected: T): String
+    }
+    object DiffShow {
+      import cats.syntax.show._
+
+      case class Report(missing: Option[NonEmptyList[String]],
+                        unexpected: Option[NonEmptyList[String]],
+                        different: Option[NonEmptyList[String]])
+
+      object Report {
+        def fromIterables[A: Show](missing: Iterable[A], unexpected: Iterable[A], different: Iterable[A]) =
+          Report(
+            NonEmptyList.fromList(missing.toList.map(_.show)),
+            NonEmptyList.fromList(unexpected.toList.map(_.show)),
+            NonEmptyList.fromList(different.toList.map(_.show))
+          )
+
+        implicit val show: Show[Report] = Show.show[Report] { r =>
+          def fmtNel(nel: NonEmptyList[String]) = nel.mkString_("\n", "\n", "")
+          List(
+            r.missing.map(nel => s"  Unexpected: ${fmtNel(nel)}"),
+            r.different.map(nel => s"  Mismatches: ${fmtNel(nel)}"),
+            r.unexpected.map(nel => s"  Unexpected: ${fmtNel(nel)}")
+          ).flatten.mkString("\n", "\n", "")
+        }
+      }
+
+      def instance[T](f: (T, T) => String): DiffShow[T] = new DiffShow[T] {
+        override def showDiff(actual: T, expected: T): String = f(actual, expected)
+      }
+
+      implicit def mapShowDiff[K, V](implicit kShow: Show[K], vShow: DiffShow[V]): DiffShow[Map[K, V]] =
+        instance[Map[K, V]] { (actual, expected) =>
+          val mismatches = expected.toList.flatMap {
+            case (k, v) =>
+              actual.get(k).filter(_ != v).map(v1 => s"   ${k.show}: ${vShow.showDiff(v1, v)}")
+          }
+
+          Report
+            .fromIterables(
+              (expected.keySet -- actual.keySet).map(_.show),
+              (actual.keySet -- expected.keySet).map(_.show),
+              mismatches
+            )
+            .show
+        }
+
+      implicit def showDiff[A: Show]: DiffShow[A] = instance[A]((a, b) => s"${a.show} ≠ ${b.show}")
+
+      implicit def setShowDiff[A: Show]: DiffShow[Set[A]] = instance[Set[A]] { (actual, expected) =>
+        Report.fromIterables(expected -- actual, actual -- expected, Nil).show
+      }
+
+      implicit def nelShowDiff[A: Show]: DiffShow[NonEmptyList[A]] = { (actual, expected) =>
+        def toMap(nel: NonEmptyList[A]) = nel.toList.zipWithIndex.map(_.swap).toMap
+        mapShowDiff[Int, A].showDiff(toMap(actual), toMap(expected))
+      }
+
+      implicit def optShowDiff[A: Show]: DiffShow[Option[A]] = instance { (a, b) =>
+        (a, b) match {
+          case (Some(x), Some(y)) => showDiff[A].showDiff(x, y)
+          case (None, Some(y))    => s" none [expected: ${y.show}]"
+          case (Some(x), None)    => s"${x.show} [not expected]"
+          case _                  => throw new InternalError("unreachable code")
+        }
+      }
+    }
+
     trait Matcher[Repr] {
       def apply(matched: Repr, expected: Container.Registered): Matcher.Result[Repr]
     }
@@ -162,11 +270,11 @@ package object algebra {
         def actual: Container.Registered
         def isSuccess: Boolean
       }
+
       object Result {
         def apply[Repr](matched: Repr, expected: Container.Registered)(actual: Container.Registered): Result[Repr] =
-          if (expected.toSpec == actual.toSpec)
-            Success(matched, expected, actual)
-          else Mismatch(matched, expected, actual)
+          Diff(actual.toSpec, expected.toSpec)
+            .fold[Result[Repr]](Success(matched, expected, actual))(Mismatch(matched, expected, actual, _))
       }
 
       case class Success[Repr](matched: Repr, expected: Container.Registered, actual: Container.Registered)
@@ -174,8 +282,7 @@ package object algebra {
         override val isSuccess = true
       }
 
-      //TODO: consider adding some diffing here
-      case class Mismatch[Repr](matched: Repr, expected: Container.Registered, actual: Container.Registered)
+      case class Mismatch[Repr](matched: Repr, expected: Container.Registered, actual: Container.Registered, diff: Diff)
           extends Result[Repr] {
         override val isSuccess = false
       }

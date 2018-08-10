@@ -11,6 +11,7 @@ import com.itv.servicebox.algebra._
 import org.scalatest.Matchers._
 import ContainerController.{ContainerStates, ContainerWithState}
 import cats.MonadError
+import cats.data.NonEmptyList
 import cats.effect.Effect
 import cats.syntax.flatMap._
 import cats.syntax.functor._
@@ -24,18 +25,25 @@ class ContainerController[F[_]](
 
   private val containersByRef = new AtomicReference[ContainerStates](initialState)
 
-  def containerGroups(spec: Service.Registered[F]) =
+  def containerGroups(spec: Service.Registered[F]) = {
+    import PortSpec.onlyInternalEq
+    import Container.Diff
+    import Diff.Entry
+
     for {
       containers <- spec.containers.toList
         .traverse[F, Option[ContainerWithState]] { c =>
           val ref = c.ref(spec.ref)
-          E.delay(containersByRef.get).map(_.get(ref).filter(_.container.toSpec == c.toSpec))
+          E.delay(containersByRef.get).map(_.get(ref).filter(_.container.toSpec === c.toSpec))
         }
         .map(_.flatten)
     } yield {
       val (running, notRunning) = containers.partition(_.isRunning)
-      ContainerGroups(running.map(_.container), notRunning.map(_.container))
+
+      ContainerGroups(running.map(_.container),
+                      notRunning.map(_.container -> Diff(NonEmptyList.of(Entry("diff-suppressed", "...")))))
     }
+  }
 
   override protected def startContainer(serviceRef: Service.Ref, container: Container.Registered): F[Unit] =
     for {

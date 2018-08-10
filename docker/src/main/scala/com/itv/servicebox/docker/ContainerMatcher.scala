@@ -7,14 +7,14 @@ import com.itv.servicebox.algebra.Container.Matcher
 import com.itv.servicebox.algebra.{BindMount, Container}
 import com.spotify.docker.client.messages.ContainerInfo
 
-import com.itv.servicebox.algebra.Lenses
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.util.Try
 
 object ContainerMatcher extends Matcher[ContainerWithDetails] {
 
-  override def apply(matched: ContainerWithDetails, expected: Container.Registered) = {
+  override def apply(matched: ContainerWithDetails,
+                     expected: Container.Registered): Matcher.Result[ContainerWithDetails] = {
     val matcherResult = Matcher.Result(matched, expected)(_: Container.Registered)
     val env           = envVars(matched.info, expected.env.keySet)
 

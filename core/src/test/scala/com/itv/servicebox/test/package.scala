@@ -22,14 +22,20 @@ package object test {
 
     def postgresSpec[F[_]: Applicative] = Service.Spec[F](
       "db",
-      NonEmptyList.of(Container.Spec("postgres:9.5.4", Map("POSTGRES_DB" -> appTag.appName), Set(5432), None, None)),
+      NonEmptyList.of(
+        Container
+          .Spec("postgres:9.5.4", Map("POSTGRES_DB" -> appTag.appName), Set(PortSpec.autoAssign(5432)), None, None)),
       constantReady[F]("postgres ready check")
     )
 
     def rabbitSpec[F[_]](implicit A: Applicative[F]) = Service.Spec[F](
       "rabbit",
       NonEmptyList.of(
-        Container.Spec("rabbitmq:3.6.10-management", Map.empty[String, String], Set(5672, 15672), None, None)),
+        Container.Spec("rabbitmq:3.6.10-management",
+                       Map.empty[String, String],
+                       Set(PortSpec.autoAssign(5672), PortSpec.autoAssign(15672)),
+                       None,
+                       None)),
       constantReady("rabbit ready check")
     )
 
@@ -37,7 +43,11 @@ package object test {
       "netcat-service",
       NonEmptyList.of(
         Container
-          .Spec("subfuzion/netcat", Map.empty[String, String], Set(8080), Some(NonEmptyList.of("-l", "8080")), None)),
+          .Spec("subfuzion/netcat",
+                Map.empty[String, String],
+                Set(PortSpec.autoAssign(8080)),
+                Some(NonEmptyList.of("-l", "8080")),
+                None)),
       constantReady("netcat ready check")
     )
 

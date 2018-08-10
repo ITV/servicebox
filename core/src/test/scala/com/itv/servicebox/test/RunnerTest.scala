@@ -67,7 +67,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext,
     withServices(TestData(portRange, List(spec), preExisting)) { env =>
       for {
         service           <- env.serviceRegistry.unsafeLookup(spec)
-        runningContainers <- env.deps.containerController.runningContainers(service)
+        runningContainers <- env.deps.containerController.matchedContainers(service)
         assertion         <- f(env, runningContainers)
       } yield assertion
     }
@@ -200,19 +200,19 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext,
     }
 
     "matches running containers" in {
-      withRunningContainers(identity)(Specs.rmq) { (env, runningContainers) =>
+      U.runSync(withRunningContainers(identity)(Specs.rmq) { (env, runningContainers) =>
         E.delay {
           runningContainers should have size 1
           runningContainers should ===(env.preExisting.map(_.container))
         }
-      }
+      })
     }
 
     "tears down containers that do not match the spec because of env changes" in {
       val changeEnv: Container.Spec => Container.Spec =
         _.copy(env = Map("POSTGRES_DB" -> "other-db"))
 
-      withRunningContainers(_.map(changeEnv))(Specs.pg) { (env, runningContainers) =>
+      U.runSync(withRunningContainers(_.map(changeEnv))(Specs.pg) { (env, runningContainers) =>
         for {
           service <- env.serviceRegistry.unsafeLookup(Specs.pg)
         } yield {
@@ -220,7 +220,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext,
           runningContainers should !==(env.preExisting.map(_.container))
           service.containers.map(_.toSpec) should ===(Specs.pg.containers)
         }
-      }
+      })
     }
 
     "tears down containers that do not match the spec because of a command change" in {
@@ -229,7 +229,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext,
 
       val cmd1 = NonEmptyList.of("-v", "-l", "8081")
 
-      withRunningContainers(_.map(setCommand(cmd1)))(Specs.nc) { (env, runningContainers) =>
+      U.runSync(withRunningContainers(_.map(setCommand(cmd1)))(Specs.nc) { (env, runningContainers) =>
         for {
           service <- env.serviceRegistry.unsafeLookup(Specs.nc)
         } yield {
@@ -237,7 +237,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext,
           runningContainers should !==(env.preExisting.map(_.container))
           service.containers.map(_.toSpec) should ===(Specs.nc.containers)
         }
-      }
+      })
     }
 
     "tears down containers that do not match the spec because of bind mounts" in {
@@ -250,7 +250,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext,
 
       val spec = Specs.pg.mapContainers(setBindMounts("/target2.md"))
 
-      withRunningContainers(_.map(setBindMounts("/target1.md")))(spec) { (env, runningContainers) =>
+      U.runSync(withRunningContainers(_.map(setBindMounts("/target1.md")))(spec) { (env, runningContainers) =>
         for {
           service <- env.serviceRegistry.unsafeLookup(spec)
         } yield {
@@ -258,7 +258,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext,
           runningContainers should !==(env.preExisting.map(_.container))
           service.containers.map(_.toSpec) should ===(spec.containers.map(_.withAbsolutePaths))
         }
-      }
+      })
     }
 
     "tears down containers that have changed name" in {
@@ -340,7 +340,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext,
         withServices(TestData(rabbitSpec)) { env =>
           for {
             service           <- env.serviceRegistry.unsafeLookup(rabbitSpec)
-            runningContainers <- env.deps.containerController.runningContainers(service)
+            runningContainers <- env.deps.containerController.matchedContainers(service)
             readyCheckDuration = env.runtimeInfo(service.ref).readyCheckDuration
           } yield {
             service.toSpec should ===(rabbitSpec)
@@ -362,7 +362,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext,
           service           <- env.serviceRegistry.unsafeLookup(spec)
           _                 <- env.runner.tearDown
           maybeSrv          <- env.serviceRegistry.lookup(service.ref)
-          runningContainers <- env.deps.containerController.runningContainers(service)
+          runningContainers <- env.deps.containerController.matchedContainers(service)
           networks          <- env.deps.networkController.networks
         } yield {
           maybeSrv should ===(None)
