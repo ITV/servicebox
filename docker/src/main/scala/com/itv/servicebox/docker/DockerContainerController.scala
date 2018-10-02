@@ -15,11 +15,13 @@ import com.itv.servicebox.algebra.ContainerController.ContainerGroups
 import com.itv.servicebox.algebra._
 import com.spotify.docker.client.DefaultDockerClient
 import com.spotify.docker.client.DockerClient.{ListContainersParam, RemoveContainerParam}
+import com.spotify.docker.client.exceptions.{DockerRequestException}
 import com.spotify.docker.client.messages.HostConfig.Bind
 import com.spotify.docker.client.messages.{Container => JavaContainer, _}
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
+import scala.util.{Success, Try}
 
 class DockerContainerController[F[_]](
     dockerClient: DefaultDockerClient,
@@ -74,16 +76,21 @@ class DockerContainerController[F[_]](
 
   private[docker] def removeContainers =
     forceRm(ListContainersParam.withLabel(AppTagLabel, tag.show), ListContainersParam.allContainers())
-
   private def forceRm(params: ListContainersParam*): F[Unit] =
     for {
       containers <- E
         .delay(dockerClient.listContainers(params: _*))
         .map(_.asScala.toList)
       _ <- logger.warn(s"removing containers: ${containers.map(_.id())}")
-      _ <- containers.traverse(c => E.delay(dockerClient.removeContainer(c.id, RemoveContainerParam.forceKill())))
-
+      _ <- containers.traverse(c => E.delay(removeContainer(c.id(), RemoveContainerParam.forceKill())))
     } yield ()
+
+  private def removeContainer(containerId: String, removeContainerParam: RemoveContainerParam *) =
+    Try {
+      dockerClient.removeContainer(containerId, RemoveContainerParam.forceKill())
+    }.recoverWith{
+      case e : DockerRequestException if e.status() == 409 => Success(()) //
+    }.get
 
   private def queryParams(serviceRef: Service.Ref, containerRef: Option[Container.Ref]): Seq[ListContainersParam] =
     containerLabels(serviceRef, containerRef, assignedName = None).map {
