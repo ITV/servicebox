@@ -22,6 +22,7 @@ import com.spotify.docker.client.messages.{Container => JavaContainer, _}
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.util.{Success, Try}
+import cats.syntax.applicativeError._
 
 class DockerContainerController[F[_]](
     dockerClient: DefaultDockerClient,
@@ -82,15 +83,15 @@ class DockerContainerController[F[_]](
         .delay(dockerClient.listContainers(params: _*))
         .map(_.asScala.toList)
       _ <- logger.warn(s"removing containers: ${containers.map(_.id())}")
-      _ <- containers.traverse(c => E.delay(removeContainer(c.id(), RemoveContainerParam.forceKill())))
+      _ <- containers.traverse(c => removeContainer(c.id()))
     } yield ()
 
-  private def removeContainer(containerId: String, removeContainerParam: RemoveContainerParam *) =
-    Try {
+  private def removeContainer(containerId: String) : F[Unit] =
+    E.delay(
       dockerClient.removeContainer(containerId, RemoveContainerParam.forceKill())
-    }.recoverWith{
-      case e : DockerRequestException if e.status() == 409 => Success(()) //
-    }.get
+    ).recoverWith {
+      case e : DockerRequestException if e.status() == 409 => E.unit
+    }
 
   private def queryParams(serviceRef: Service.Ref, containerRef: Option[Container.Ref]): Seq[ListContainersParam] =
     containerLabels(serviceRef, containerRef, assignedName = None).map {

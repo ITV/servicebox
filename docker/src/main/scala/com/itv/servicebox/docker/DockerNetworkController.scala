@@ -5,6 +5,7 @@ import cats.effect.Effect
 import cats.syntax.flatMap._
 import cats.syntax.functor._
 import cats.syntax.apply._
+import cats.syntax.applicativeError._
 import com.itv.servicebox.algebra._
 import com.spotify.docker.client.DefaultDockerClient
 import com.spotify.docker.client.DockerClient.ListNetworksParam
@@ -50,16 +51,15 @@ class DockerNetworkController[F[_]](dockerClient: DefaultDockerClient, logger: L
     for {
       networkExists <- networks.map(_.exists(_ == _networkName))
       _ <- if (networkExists)
-        E.delay(logger.info(s"removing network '${_networkName}'")) *> E.delay(
-          removeNetwork(config.name()))
+        E.delay(logger.info(s"removing network '${_networkName}'")) *> removeNetwork(config.name())
       else E.delay(logger.debug(s"cannot remove network ${_networkName}. It doesn't exist!"))
     } yield ()
 
-  private def removeNetwork(networkName: String) = Try {
+  private def removeNetwork(networkName: String) = E.delay(
     dockerClient.removeNetwork(config.name())
-  }.recoverWith{
-    case _:NetworkNotFoundException => Success(())
-  }.get
+  ).recoverWith {
+    case _:NetworkNotFoundException => E.unit
+  }
 
   override def networkName: Option[NetworkName] = Some(config.name())
 }
