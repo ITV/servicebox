@@ -4,6 +4,7 @@ import java.util.concurrent.{TimeUnit, TimeoutException}
 
 import cats.effect.{ContextShift, IO, Timer}
 import cats.syntax.apply._
+import scala.concurrent.duration._
 import com.itv.servicebox.algebra._
 
 import scala.concurrent.ExecutionContext
@@ -29,15 +30,14 @@ package object interpreter {
             IO(logger.warn(s"exiting loop. Elapsed time: $elapsed")) *>
               IO.raiseError(new TimeoutException(s"Ready check timed out for $label after $totalTimeout"))
           } else IO.unit
+          attemptBegin <- currentTimeMs
           _ <- logger.debug(
             s"running ready-check for $label [time taken so far: $elapsed, check timeout: $checkTimeout, total timeout: $totalTimeout]")
-          result <- IO.race(f().attempt, IO.sleep(checkTimeout)(IO.timer(implicitly)))
+          result <- f().timeout(checkTimeout).attempt
+          sleepRemainder <- lapseTime(attemptBegin).map(elapsedTime => List(checkTimeout - elapsedTime, 0.millis).max)
           outcome <- result.fold(
-            _.fold(
-              err => logger.warn(s"Ready check failed for $label: $err...") *> IO.sleep(checkTimeout) *> attemptAction(startTime),
-              out => IO(logger.debug(s"done! total elapsed time: $elapsed")) *> IO.pure(out)
-            ),
-            _ => logger.debug(s"ready-check attempt timed out after after $checkTimeout") *> attemptAction(startTime)
+            err => logger.warn(s"Ready check failed for $label: $err...") *> IO.sleep(sleepRemainder) *> attemptAction(startTime),
+            out => IO(logger.debug(s"done! total elapsed time: $elapsed")) *> IO.pure(out)
           )
         } yield outcome
 
