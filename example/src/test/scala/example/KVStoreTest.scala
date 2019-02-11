@@ -68,7 +68,7 @@ class KVStoreTest extends FlatSpec with Matchers with BeforeAndAfterAll {
         } yield ()
 
       }
-
+      implicit val timer: Timer[IO] = IO.timer(implicitly)
       val spec = Service.Spec[IO](
         "influxdb",
         NonEmptyList.of(
