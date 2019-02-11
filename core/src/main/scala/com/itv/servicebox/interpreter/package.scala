@@ -2,7 +2,7 @@ package com.itv.servicebox
 
 import java.util.concurrent.{TimeUnit, TimeoutException}
 
-import cats.effect.{IO, Timer}
+import cats.effect.{ContextShift, IO}
 import cats.syntax.apply._
 import com.itv.servicebox.algebra._
 import scala.concurrent.ExecutionContext
@@ -13,11 +13,13 @@ package object interpreter {
 
   implicit def ioScheduler(implicit logger: Logger[IO]): Scheduler[IO] = new Scheduler[IO](logger) {
     override def retry[A](f: () => IO[A], checkTimeout: FiniteDuration, totalTimeout: FiniteDuration, label: String)(
-        implicit ec: ExecutionContext): IO[A] = {
+      implicit ec: ExecutionContext): IO[A] = {
 
-      val timer = implicitly[Timer[IO]]
+      val timer = IO.timer(ec)
+      implicit val cs: ContextShift[IO] = IO.contextShift(ec)
 
-      def currentTimeMs                        = timer.clockMonotonic(TimeUnit.MILLISECONDS).map(FiniteDuration(_, TimeUnit.MILLISECONDS))
+      def currentTimeMs = timer.clock.monotonic(TimeUnit.MILLISECONDS).map(FiniteDuration(_, TimeUnit.MILLISECONDS))
+
       def lapseTime(startTime: FiniteDuration) = currentTimeMs.map(_ - startTime)
 
       def attemptAction(startTime: FiniteDuration): IO[A] =

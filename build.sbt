@@ -26,9 +26,9 @@ val baseSettings = Seq(
     "-Xmax-classfile-name","100"
   ),
   libraryDependencies ++= Seq(
-    "org.typelevel" %% "cats-core" % "1.1.0",
-    "org.typelevel" %% "cats-effect" % "0.10",
-    "org.typelevel" %% "kittens" % "1.1.0",
+    "org.typelevel" %% "cats-core" % "1.6.0",
+    "org.typelevel" %% "cats-effect" % "1.2.0",
+    "org.typelevel" %% "kittens" % "1.2.0",
     "org.scalatest" %% "scalatest" % "3.0.4" % "test",
     "com.github.julien-truffaut" %%  "monocle-core"  % monocleVersion,
     "com.github.julien-truffaut" %%  "monocle-macro" % monocleVersion,
