@@ -1,8 +1,8 @@
 import sbt.Keys.publishArtifact
 import ReleaseTransformations._
 
-val monocleVersion = "1.5.1-cats"
-val doobieVersion = "0.5.2"
+val monocleVersion = "2.1.0"
+val doobieVersion = "0.9.2"
 val influxDbVersion = "2.9"
 
 val readme     = "README.md"
@@ -10,31 +10,33 @@ val readmePath = file(".") / readme
 val copyReadme =
   taskKey[File](s"Copy readme file to project root")
 
+val Scala212 = "2.12.5"
+val Scala213 = "2.13.3"
+val supportedScalaVersions = Seq(Scala212, Scala213)
+
 val baseSettings = Seq(
   organization := "com.itv",
   name := "servicebox",
-  scalaVersion := "2.12.5",
+  scalaVersion := Scala213,
+  crossScalaVersions := supportedScalaVersions,
   scalacOptions ++= Seq(
     "-target:jvm-1.8",
     "-encoding", "UTF-8",
     "-deprecation",
     "-feature",
     "-language:higherKinds",
-    "-Yno-adapted-args",
-    "-Ypartial-unification",
     "-Xfatal-warnings",
-    "-Xmax-classfile-name","100"
   ),
   libraryDependencies ++= Seq(
-    "org.typelevel" %% "cats-core" % "1.6.0",
-    "org.typelevel" %% "cats-effect" % "1.2.0",
-    "org.typelevel" %% "kittens" % "1.2.0",
-    "org.scalatest" %% "scalatest" % "3.0.4" % "test",
+    "org.typelevel" %% "cats-core" % "2.2.0",
+    "org.typelevel" %% "cats-effect" % "2.2.0",
+    "org.typelevel" %% "kittens" % "2.1.0",
+    "org.scalatest" %% "scalatest" % "3.2.2" % "test",
     "com.github.julien-truffaut" %%  "monocle-core"  % monocleVersion,
     "com.github.julien-truffaut" %%  "monocle-macro" % monocleVersion,
     "ch.qos.logback" % "logback-classic" % "1.2.3",
-    "com.typesafe.scala-logging" %% "scala-logging" % "3.8.0",
-    compilerPlugin("org.spire-math" %% "kind-projector" % "0.9.6")
+    "com.typesafe.scala-logging" %% "scala-logging" % "3.9.2",
+    compilerPlugin("org.typelevel" %% "kind-projector" % "0.11.0" cross CrossVersion.full)
   ))
 
 val artefactSettings = baseSettings ++ Seq(
@@ -103,7 +105,7 @@ lazy val docker = withDeps((project in file("docker"))
   )))(core)
 
 lazy val example = withDeps((project in file("example"))
-  .enablePlugins(TutPlugin)
+//  .enablePlugins(TutPlugin) //TODO tut needed?
   .settings(baseSettings ++ Seq(
       libraryDependencies ++= Seq(
         "org.flywaydb" % "flyway-core"      % "4.2.0",
@@ -111,19 +113,20 @@ lazy val example = withDeps((project in file("example"))
         "org.tpolecat" %% "doobie-postgres" % doobieVersion,
         "org.influxdb" % "influxdb-java"    % influxDbVersion
       ),
-      copyReadme := {
-      val _      = (tut in Compile).value
-      val tutDir = tutTargetDirectory.value
-      val log    = streams.value.log
-
-      log.info(s"Copying ${tutDir / readme} to ${file(".") / readme}")
-
-      IO.copyFile(
-        tutDir / readme,
-        readmePath
-      )
-      readmePath
-    })))(core, docker)
+//      copyReadme := {
+//      val _      = (tut in Compile).value
+//      val tutDir = tutTargetDirectory.value
+//      val log    = streams.value.log
+//
+//      log.info(s"Copying ${tutDir / readme} to ${file(".") / readme}")
+//
+//      IO.copyFile(
+//        tutDir / readme,
+//        readmePath
+//      )
+//      readmePath
+//    }
+  )))(core, docker)
 
 lazy val root = (project in file("."))
   .aggregate(core, docker)

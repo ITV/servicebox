@@ -37,7 +37,7 @@ class Runner[F[_]](srvCtrl: ServiceController[F], networkCtrl: NetworkController
     services.foldM(())((_, s) => tearDownOnce(s).void)
 
   private def servicesInReverseTopologicalOrder: F[List[Service.Spec[F]]] = M.fromEither {
-    val servicesByRef = services.groupBy(_.ref).mapValues(_.head)
+    val servicesByRef = services.groupBy(_.ref).view.mapValues(_.head)
 
     val incomingEdges = services.foldMap { s =>
       Map(s.ref -> Set.empty[Service.Ref]) ++ s.dependencies.toList.foldMap { dep =>

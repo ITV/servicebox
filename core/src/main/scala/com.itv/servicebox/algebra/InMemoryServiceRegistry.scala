@@ -43,7 +43,7 @@ class InMemoryServiceRegistry[F[_]](range: Range, logger: Logger[F])(implicit ta
       range <- getRange
       _     <- lift(logger.debug(s"current port range: $range"))
       portsWithIndex = container.ports.zipWithIndex.map(_.swap).toMap
-      attemptedPorts <- lift(range.toStream.foldM(List.empty[Int]) {
+      attemptedPorts <- lift(range.to(LazyList).foldM(List.empty[Int]) {
         case (acc, port) =>
           if (acc.size == portsWithIndex.size)
             A.pure(acc)
