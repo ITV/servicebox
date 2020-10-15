@@ -2,10 +2,11 @@ language: scala
 scala:
 - 2.11.12
 - 2.12.5
+- 2.13.3
 jdk:
 - oraclejdk8
 script:
-- sbt ++$TRAVIS_SCALA_VERSION ";core/test;docker/test;example/test;example/copyReadme"
+- sbt ++$TRAVIS_SCALA_VERSION ";core/test;docker/test;example/test;example/mdoc;example/copyReadme"
 - ci/publish.sh
 env:
   global:

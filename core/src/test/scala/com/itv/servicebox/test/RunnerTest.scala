@@ -242,7 +242,6 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext,
       })
     }
 
-    // TODO I'm broken and sad
     "tears down containers that do not match the spec because of bind mounts" in {
       import com.itv.servicebox.algebra.Lenses.mounts
       def bindMount(target: String) =

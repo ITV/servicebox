@@ -4,4 +4,4 @@ addSbtPlugin("org.xerial.sbt" % "sbt-sonatype" % "2.3")
 
 addSbtPlugin("com.jsuereth" % "sbt-pgp" % "1.1.1")
 
-//addSbtPlugin("org.tpolecat" % "tut-plugin" % "0.6.4") // TODO needed?
+addSbtPlugin("org.scalameta" % "sbt-mdoc" % "2.2.9")

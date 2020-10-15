@@ -1,8 +1,8 @@
 import sbt.Keys.publishArtifact
 import ReleaseTransformations._
 
-val monocleVersion = "2.1.0"
-val doobieVersion = "0.9.2"
+val monocleVersion  = "2.1.0"
+val doobieVersion   = "0.9.2"
 val influxDbVersion = "2.9"
 
 val readme     = "README.md"
@@ -10,8 +10,8 @@ val readmePath = file(".") / readme
 val copyReadme =
   taskKey[File](s"Copy readme file to project root")
 
-val Scala212 = "2.12.5"
-val Scala213 = "2.13.3"
+val Scala212               = "2.12.5"
+val Scala213               = "2.13.3"
 val supportedScalaVersions = Seq(Scala212, Scala213)
 
 val baseSettings = Seq(
@@ -21,23 +21,25 @@ val baseSettings = Seq(
   crossScalaVersions := supportedScalaVersions,
   scalacOptions ++= Seq(
     "-target:jvm-1.8",
-    "-encoding", "UTF-8",
+    "-encoding",
+    "UTF-8",
     "-deprecation",
     "-feature",
     "-language:higherKinds",
     "-Xfatal-warnings",
   ),
   libraryDependencies ++= Seq(
-    "org.typelevel" %% "cats-core" % "2.2.0",
-    "org.typelevel" %% "cats-effect" % "2.2.0",
-    "org.typelevel" %% "kittens" % "2.1.0",
-    "org.scalatest" %% "scalatest" % "3.2.2" % "test",
-    "com.github.julien-truffaut" %%  "monocle-core"  % monocleVersion,
-    "com.github.julien-truffaut" %%  "monocle-macro" % monocleVersion,
-    "ch.qos.logback" % "logback-classic" % "1.2.3",
-    "com.typesafe.scala-logging" %% "scala-logging" % "3.9.2",
+    "org.typelevel"              %% "cats-core"      % "2.2.0",
+    "org.typelevel"              %% "cats-effect"    % "2.2.0",
+    "org.typelevel"              %% "kittens"        % "2.1.0",
+    "org.scalatest"              %% "scalatest"      % "3.2.2" % "test",
+    "com.github.julien-truffaut" %% "monocle-core"   % monocleVersion,
+    "com.github.julien-truffaut" %% "monocle-macro"  % monocleVersion,
+    "ch.qos.logback"             % "logback-classic" % "1.2.3",
+    "com.typesafe.scala-logging" %% "scala-logging"  % "3.9.2",
     compilerPlugin("org.typelevel" %% "kind-projector" % "0.11.0" cross CrossVersion.full)
-  ))
+  )
+)
 
 val artefactSettings = baseSettings ++ Seq(
   releaseProcess := Seq[ReleaseStep](
@@ -51,32 +53,26 @@ val artefactSettings = baseSettings ++ Seq(
     commitNextVersion,
     pushChanges
   ),
-
   releaseCrossBuild := true,
   publishMavenStyle := true,
   publishArtifact in Test := false,
   pomIncludeRepository := { _ =>
     false
   },
-
   releasePublishArtifactsAction := PgpKeys.publishSigned.value,
-
   pgpPublicRing := file("./ci/public.asc"),
   pgpSecretRing := file("./ci/private.asc"),
   pgpSigningKey := Some(-5373332187933973712L),
   pgpPassphrase := Option(System.getenv("GPG_KEY_PASSPHRASE")).map(_.toArray),
-
   homepage := Some(url("https://github.com/itv/servicebox")),
   scmInfo := Some(ScmInfo(url("https://github.com/itv/servicebox"), "git@github.com:itv/servicebox.git")),
   developers := List(Developer("afiore", "Andrea Fiore", "andrea.fiore@itv.com", url("https://github.com/afiore"))),
   licenses += ("ITV Open Source Software Licence", url("http://itv.com/itv-oss-licence-v1.0")),
   publishMavenStyle := true,
-
   credentials ++= (for {
     username <- Option(System.getenv().get("SONATYPE_USER"))
     password <- Option(System.getenv().get("SONATYPE_PASS"))
   } yield Credentials("Sonatype Nexus Repository Manager", "oss.sonatype.org", username, password)).toSeq,
-
   publishTo := {
     val nexus = "https://oss.sonatype.org/"
     if (isSnapshot.value)
@@ -86,47 +82,55 @@ val artefactSettings = baseSettings ++ Seq(
   }
 )
 
-def withDeps(p: Project)(dep: Project*): Project
-  = p.dependsOn(dep.map(_ % "compile->compile;test->test"): _*)
+def withDeps(p: Project)(dep: Project*): Project = p.dependsOn(dep.map(_ % "compile->compile;test->test"): _*)
 
 lazy val core = (project in file("core"))
   .settings(
     artefactSettings,
-  ).settings(
-  moduleName := "servicebox-core"
-)
+  )
+  .settings(
+    moduleName := "servicebox-core"
+  )
 
-lazy val docker = withDeps((project in file("docker"))
-  .settings(artefactSettings ++ Seq(
-    moduleName := "servicebox-docker",
-    libraryDependencies ++= Seq(
-      "com.spotify" % "docker-client" % "8.11.7"
-    )
-  )))(core)
+lazy val docker = withDeps(
+  (project in file("docker"))
+    .settings(
+      artefactSettings ++ Seq(
+        moduleName := "servicebox-docker",
+        libraryDependencies ++= Seq(
+          "com.spotify" % "docker-client" % "8.11.7"
+        )
+      )))(core)
 
-lazy val example = withDeps((project in file("example"))
-//  .enablePlugins(TutPlugin) //TODO tut needed?
-  .settings(baseSettings ++ Seq(
+lazy val example = withDeps(
+  (project in file("example"))
+    .enablePlugins(MdocPlugin)
+    .settings(baseSettings ++ Seq(
       libraryDependencies ++= Seq(
         "org.flywaydb" % "flyway-core"      % "4.2.0",
+        "org.postgresql" % "postgresql" % "42.2.17",
         "org.tpolecat" %% "doobie-core"     % doobieVersion,
         "org.tpolecat" %% "doobie-postgres" % doobieVersion,
         "org.influxdb" % "influxdb-java"    % influxDbVersion
       ),
-//      copyReadme := {
-//      val _      = (tut in Compile).value
-//      val tutDir = tutTargetDirectory.value
-//      val log    = streams.value.log
-//
-//      log.info(s"Copying ${tutDir / readme} to ${file(".") / readme}")
-//
-//      IO.copyFile(
-//        tutDir / readme,
-//        readmePath
-//      )
-//      readmePath
-//    }
-  )))(core, docker)
+      mdocIn := baseDirectory.value / "src" / "main" / "mdoc",
+      scalacOptions in Compile ~= {
+        // https://github.com/scalameta/mdoc/issues/210
+        _.filterNot(Set("-Xfatal-warnings"))
+      },
+      copyReadme := {
+        val mdocDir = mdocOut.value
+        val log     = streams.value.log
+
+        log.info(s"Copying ${mdocDir / readme} to ${file(".") / readme}")
+
+        IO.copyFile(
+          mdocDir / readme,
+          readmePath
+        )
+        readmePath
+      }
+    )))(core, docker)
 
 lazy val root = (project in file("."))
   .aggregate(core, docker)

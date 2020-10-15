@@ -46,7 +46,7 @@ class KVStoreTest extends AnyFlatSpec with Matchers with BeforeAndAfterAll {
             None,
             None
           )),
-        Service.ReadyCheck[IO](dbConnect, 10.millis, 30.seconds)
+        Service.ReadyCheck[IO](dbConnect, 1000.millis, 30.seconds)
       )
     }
 

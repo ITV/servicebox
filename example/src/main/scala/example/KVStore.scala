@@ -3,8 +3,6 @@ package example
 import java.util.concurrent.TimeUnit
 
 import cats.effect.{ContextShift, IO}
-import cats.syntax.functor._
-import cats.syntax.apply._
 import doobie._
 import doobie.implicits._
 import org.influxdb.InfluxDBFactory
