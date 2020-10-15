@@ -5,7 +5,6 @@ import cats.effect.Effect
 import cats.{Applicative, Functor, MonadError}
 import com.itv.servicebox.algebra._
 import org.scalatest.Assertion
-import org.scalatest.matchers.should.Matchers
 import cats.syntax.show._
 import com.itv.servicebox.fake.TestNetworkController
 import org.scalatest.Assertions.fail

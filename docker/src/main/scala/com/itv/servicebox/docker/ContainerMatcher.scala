@@ -8,7 +8,7 @@ import com.itv.servicebox.algebra.{BindMount, Container}
 import com.spotify.docker.client.messages.ContainerInfo
 
 import scala.annotation.tailrec
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 import scala.util.Try
 
 object ContainerMatcher extends Matcher[ContainerWithDetails] {

@@ -33,6 +33,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext,
                                 U: UnsafeBlocking[F])
     extends AnyFreeSpec
     with Matchers
+    with EitherValues
     with TypeCheckedTripleEquals {
 
   //TODO: cleanup appTag mess!
@@ -241,6 +242,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext,
       })
     }
 
+    // TODO I'm broken and sad
     "tears down containers that do not match the spec because of bind mounts" in {
       import com.itv.servicebox.algebra.Lenses.mounts
       def bindMount(target: String) =
@@ -299,7 +301,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext,
             M.pure(Succeeded)
         }.attempt)
         .left
-        .get should ===(expected)
+        .value should ===(expected)
     }
 
     "raises an error if a service ready-check times out" in {
@@ -322,7 +324,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext,
         }
       )
 
-      result.left.get shouldBe a[TimeoutException]
+      result.left.value shouldBe a[TimeoutException]
       elapsedTime should be > 1.second
       counter.get should ===(10 +- 5)
     }

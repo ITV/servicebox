@@ -7,7 +7,7 @@ import com.itv.servicebox.fake.TestNetworkState
 import com.spotify.docker.client.DefaultDockerClient
 import com.spotify.docker.client.DockerClient.ListNetworksParam
 
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 
 class DockerTestNetworkController[F[_]](client: DefaultDockerClient, logger: Logger[F])(implicit E: Effect[F],
                                                                                         M: FlatMap[F],

@@ -1,7 +1,7 @@
 package example
 
 import cats.data.NonEmptyList
-import cats.effect.{IO, Timer}
+import cats.effect.{ContextShift, IO, Timer}
 import cats.syntax.flatMap._
 import cats.syntax.monadError._
 import com.itv.servicebox.algebra.{Runner, _}
@@ -9,13 +9,17 @@ import com.itv.servicebox.docker
 import com.itv.servicebox.interpreter._
 import org.influxdb.InfluxDBFactory
 import org.influxdb.dto.QueryResult
-import org.scalatest.{BeforeAndAfterAll, FlatSpec, Matchers}
+import org.scalatest.BeforeAndAfterAll
+import org.scalatest.flatspec.AnyFlatSpec
+import org.scalatest.matchers.should.Matchers
 
+import scala.concurrent.ExecutionContext
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 
-class KVStoreTest extends FlatSpec with Matchers with BeforeAndAfterAll {
-  implicit val tag: AppTag = AppTag("com", "example")
+class KVStoreTest extends AnyFlatSpec with Matchers with BeforeAndAfterAll {
+  implicit val tag: AppTag          = AppTag("com", "example")
+  implicit val cs: ContextShift[IO] = IO.contextShift(ExecutionContext.global)
 
   private lazy val runnerAndConfig: (Runner[IO], Config) = {
     val basePostgresConfig = DbConfig("localhost", 5432, "kvstore", "postgres", "")

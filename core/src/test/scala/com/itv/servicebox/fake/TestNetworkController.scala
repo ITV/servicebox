@@ -27,12 +27,12 @@ object TestNetworkController {
       override def networks: F[List[NetworkName]] =
         E.delay(networksCreated.get().toList)
 
-      override def createNetwork(): F[Unit] = {
+      override def createNetwork: F[Unit] = {
         logger.info(s"creating network: ${_networkName}")
         E.delay(networksCreated.getAndUpdate(_ + _networkName))
       }
 
-      override def removeNetwork(): F[Unit] =
+      override def removeNetwork: F[Unit] =
         E.delay {
           logger.info(s"removing networks ${_networkName}")
           networksCreated.getAndUpdate(_ - _networkName)

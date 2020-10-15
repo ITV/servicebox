@@ -9,7 +9,7 @@ import com.spotify.docker.client.DockerClient
 import com.spotify.docker.client.DockerClient.ListImagesParam
 import com.spotify.docker.client.messages.ProgressMessage
 
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 
 class DockerImageRegistry[F[_]](dockerClient: DockerClient, logger: Logger[F])(implicit E: Effect[F],
                                                                                M: MonadError[F, Throwable])
