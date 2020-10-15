@@ -4,7 +4,7 @@ scala:
 - 2.12.5
 - 2.13.3
 jdk:
-- oraclejdk8
+- openjdk8
 script:
 - sbt ++$TRAVIS_SCALA_VERSION ";core/test;docker/test;example/test;example/mdoc;example/copyReadme"
 - ci/publish.sh
