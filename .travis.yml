@@ -5,6 +5,8 @@ scala:
 - 2.13.3
 jdk:
 - openjdk8
+services:
+- docker
 script:
 - sbt ++$TRAVIS_SCALA_VERSION ";core/test;docker/test;example/test;example/mdoc;example/copyReadme"
 - ci/publish.sh
