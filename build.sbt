@@ -10,15 +10,12 @@ val readmePath = file(".") / readme
 val copyReadme =
   taskKey[File](s"Copy readme file to project root")
 
-val Scala212               = "2.12.5"
 val Scala213               = "2.13.3"
-val supportedScalaVersions = Seq(Scala212, Scala213)
 
 val baseSettings = Seq(
   organization := "com.itv",
   name := "servicebox",
   scalaVersion := Scala213,
-  crossScalaVersions := supportedScalaVersions,
   scalacOptions ++= Seq(
     "-target:jvm-1.8",
     "-encoding",
