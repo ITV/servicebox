@@ -1,13 +1,14 @@
 language: scala
 scala:
-- 2.11.12
-- 2.12.5
 - 2.13.3
 jdk:
 - openjdk8
 services:
 - docker
 script:
+- docker pull subfuzion/netcat:latest
+- docker pull rabbitmq:3.6.10-management
+- docker pull postgres:9.5.4
 - sbt ++$TRAVIS_SCALA_VERSION ";core/test;docker/test;example/test;example/mdoc;example/copyReadme"
 - ci/publish.sh
 env:
