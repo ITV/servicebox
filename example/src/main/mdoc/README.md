@@ -35,8 +35,8 @@ libraryDependencies ++= Seq(
 
 To start with, you must specify your service dependencies as follows:
 
-```tut:silent
-import cats.effect.IO
+```scala mdoc:silent
+import cats.effect.{ContextShift, IO}
 import scala.concurrent.duration._
 import cats.data.NonEmptyList
 
@@ -47,8 +47,12 @@ import com.itv.servicebox.docker
 import doobie._
 import doobie.implicits._
 
+import scala.concurrent.ExecutionContext
+
 object Postgres {
   case class DbConfig(host: String, dbName: String, password: String, port: Int)
+
+  implicit val cs: ContextShift[IO] = IO.contextShift(ExecutionContext.global)
   
   val xa = Transactor.fromDriverManager[IO](
     "org.postgresql.Driver", 
@@ -91,7 +95,7 @@ which will be called repeatedly (i.e. every 50 millis) until it either returns s
 
 Once defined, one or several service specs might be executed through a `Runner`:
 
-```tut
+```scala mdoc:silent
 import scala.concurrent.ExecutionContext.Implicits.global
 
 implicit val tag: AppTag = AppTag("com.example", "some-app")
@@ -112,22 +116,22 @@ lazy val runner = {
 The service `Runner` exposes two main methods: a `tearDown`, which will kill all the containers
 defined in the spec, and a `setUp`:
 
-```tut
-val registeredServices = runner.setUp.unsafeRunSync
+```scala mdoc:silent
+val registeredServices = runner.setUp.unsafeRunSync()
 ```
 
 This returns us a wrapper of a `Map[Service.Ref, Service.Registered[F]]`
 providing us with some convenience methods to resolve running services/containers:
 
-```tut
-val pgLocation = registeredServices.locationFor(postgresSpec.ref, 5432).unsafeRunSync
+```scala mdoc:silent
+val pgLocation = registeredServices.locationFor(postgresSpec.ref, 5432).unsafeRunSync()
 ```
 
 Notice that, while in the `Postgres` spec we define a container port, the library will automatically bind it to
 an available host port (see `InMemoryServiceRegistry` for details). Remember that, in order to use the service
 in your tests, you will have to point your app to the dynamically assigned host/port
 
-```tut
+```scala mdoc:silent
 pgLocation.port
 ```
 

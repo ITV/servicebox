@@ -36,7 +36,7 @@ libraryDependencies ++= Seq(
 To start with, you must specify your service dependencies as follows:
 
 ```scala
-import cats.effect.IO
+import cats.effect.{ContextShift, IO}
 import scala.concurrent.duration._
 import cats.data.NonEmptyList
 
@@ -47,8 +47,12 @@ import com.itv.servicebox.docker
 import doobie._
 import doobie.implicits._
 
+import scala.concurrent.ExecutionContext
+
 object Postgres {
   case class DbConfig(host: String, dbName: String, password: String, port: Int)
+
+  implicit val cs: ContextShift[IO] = IO.contextShift(ExecutionContext.global)
   
   val xa = Transactor.fromDriverManager[IO](
     "org.postgresql.Driver", 
@@ -77,7 +81,7 @@ object Postgres {
       NonEmptyList.of(
         Container.Spec("postgres:9.5.4",
                        Map("POSTGRES_DB" -> config.dbName, "POSTGRES_PASSWORD" -> config.password),
-                       Set(5432),
+                       Set(PortSpec.autoAssign(5432)),
                        None,
                        None)),
       Service.ReadyCheck[IO](dbConnect, 50.millis, 5.seconds)
@@ -92,43 +96,35 @@ which will be called repeatedly (i.e. every 50 millis) until it either returns s
 Once defined, one or several service specs might be executed through a `Runner`:
 
 ```scala
-scala> import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.ExecutionContext.Implicits.global
 
-scala> implicit val tag: AppTag = AppTag("com.example", "some-app")
-tag: com.itv.servicebox.algebra.AppTag = AppTag(com.example,some-app)
+implicit val tag: AppTag = AppTag("com.example", "some-app")
 
-scala> val config = Postgres.DbConfig("localhost", "user", "pass", 5432)
-config: Postgres.DbConfig = DbConfig(localhost,user,pass,5432)
+val config = Postgres.DbConfig("localhost", "user", "pass", 5432)
+val postgresSpec = Postgres(config)
 
-scala> val postgresSpec = Postgres(config)
-postgresSpec: com.itv.servicebox.algebra.Service.Spec[cats.effect.IO] = Spec(Postgres,NonEmptyList(Spec(postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),Set(AutoAssign(5432)),None,None,None)),ReadyCheck(Postgres$$$Lambda$11934/1258186473@28be21b9,50 milliseconds,5 seconds,None),Set())
-
-scala> //evaluate only once to prevent shutdown hook to be fired multiple times
-     | lazy val runner = {
-     |   val instance = docker.runner()(postgresSpec)
-     |   sys.addShutdownHook {
-     |     instance.tearDown.unsafeRunSync()
-     |   }
-     |   instance
-     | }
-runner: com.itv.servicebox.algebra.Runner[cats.effect.IO] = <lazy>
+//evaluate only once to prevent shutdown hook to be fired multiple times
+lazy val runner = {
+  val instance = docker.runner()(postgresSpec)
+  sys.addShutdownHook {
+    instance.tearDown.unsafeRunSync()
+  }
+  instance
+}
 ```
 
 The service `Runner` exposes two main methods: a `tearDown`, which will kill all the containers
 defined in the spec, and a `setUp`:
 
 ```scala
-scala> val registeredServices = runner.setUp.unsafeRunSync
-registeredServices: com.itv.servicebox.algebra.ServicesByRef[cats.effect.IO] = ServicesByRef(Map(Ref(com.example/some-app/Postgres) -> Registered(Postgres,NonEmptyList(Registered(Ref(com.example/some-app/Postgres/postgres:9.5.4),postgres:9.5.4,Map(POSTGRES_DB -> user, POSTGRES_PASSWORD -> pass),Set((49163,5432)),None,None,None)),Endpoints(NonEmptyList(Location(127.0.0.1,49163,5432))),ReadyCheck(Postgres$$$Lambda$11934/1258186473@28be21b9,50 milliseconds,5 seconds,None),Set())))
+val registeredServices = runner.setUp.unsafeRunSync()
 ```
 
 This returns us a wrapper of a `Map[Service.Ref, Service.Registered[F]]`
 providing us with some convenience methods to resolve running services/containers:
 
 ```scala
-scala> val pgLocation = registeredServices.locationFor(postgresSpec.ref, 5432).unsafeRunSync
-pgLocation: com.itv.servicebox.algebra.Location = Location(127.0.0.1,49163,5432)
+val pgLocation = registeredServices.locationFor(postgresSpec.ref, 5432).unsafeRunSync()
 ```
 
 Notice that, while in the `Postgres` spec we define a container port, the library will automatically bind it to
@@ -136,8 +132,7 @@ an available host port (see `InMemoryServiceRegistry` for details). Remember tha
 in your tests, you will have to point your app to the dynamically assigned host/port
 
 ```scala
-scala> pgLocation.port
-res1: Int = 49163
+pgLocation.port
 ```
 
 ## Detailed example

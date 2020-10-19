@@ -2,19 +2,20 @@ package com.itv.servicebox.fake
 
 import java.util.concurrent.atomic.AtomicReference
 
+import cats.MonadError
+import cats.data.NonEmptyList
+import cats.effect.Effect
 import cats.instances.list._
+import cats.syntax.flatMap._
+import cats.syntax.functor._
 import cats.syntax.show._
 import cats.syntax.traverse._
 import com.itv.servicebox.algebra
 import com.itv.servicebox.algebra.ContainerController.ContainerGroups
 import com.itv.servicebox.algebra._
-import org.scalatest.Matchers._
-import ContainerController.{ContainerStates, ContainerWithState}
-import cats.MonadError
-import cats.data.NonEmptyList
-import cats.effect.Effect
-import cats.syntax.flatMap._
-import cats.syntax.functor._
+import com.itv.servicebox.fake.ContainerController.{ContainerStates, ContainerWithState}
+import org.scalactic.TripleEquals._
+import org.scalatest.Assertions.fail
 
 class ContainerController[F[_]](
     imageRegistry: ImageRegistry[F],
@@ -26,7 +27,6 @@ class ContainerController[F[_]](
   private val containersByRef = new AtomicReference[ContainerStates](initialState)
 
   def containerGroups(spec: Service.Registered[F]) = {
-    import PortSpec.onlyInternalEq
     import Container.Diff
     import Diff.Entry
 
@@ -34,7 +34,8 @@ class ContainerController[F[_]](
       containers <- spec.containers.toList
         .traverse[F, Option[ContainerWithState]] { c =>
           val ref = c.ref(spec.ref)
-          E.delay(containersByRef.get).map(_.get(ref).filter(_.container.toSpec === c.toSpec))
+          E.delay(containersByRef.get)
+            .map(_.get(ref).filter(containerWithState => containerWithState.container.toSpec === c.toSpec))
         }
         .map(_.flatten)
     } yield {

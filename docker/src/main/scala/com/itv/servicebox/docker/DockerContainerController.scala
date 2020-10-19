@@ -15,13 +15,12 @@ import com.itv.servicebox.algebra.ContainerController.ContainerGroups
 import com.itv.servicebox.algebra._
 import com.spotify.docker.client.DefaultDockerClient
 import com.spotify.docker.client.DockerClient.{ListContainersParam, RemoveContainerParam}
-import com.spotify.docker.client.exceptions.{DockerRequestException}
+import com.spotify.docker.client.exceptions.DockerRequestException
 import com.spotify.docker.client.messages.HostConfig.Bind
 import com.spotify.docker.client.messages.{Container => JavaContainer, _}
 
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 import scala.collection.mutable
-import scala.util.{Success, Try}
 import cats.syntax.applicativeError._
 
 class DockerContainerController[F[_]](
@@ -86,12 +85,13 @@ class DockerContainerController[F[_]](
       _ <- containers.traverse(c => removeContainer(c.id()))
     } yield ()
 
-  private def removeContainer(containerId: String) : F[Unit] =
+  private def removeContainer(containerId: String): F[Unit] =
     E.delay(
-      dockerClient.removeContainer(containerId, RemoveContainerParam.forceKill())
-    ).recoverWith {
-      case e : DockerRequestException if e.status() == 409 => E.unit
-    }
+        dockerClient.removeContainer(containerId, RemoveContainerParam.forceKill())
+      )
+      .recoverWith {
+        case e: DockerRequestException if e.status() == 409 => E.unit
+      }
 
   private def queryParams(serviceRef: Service.Ref, containerRef: Option[Container.Ref]): Seq[ListContainersParam] =
     containerLabels(serviceRef, containerRef, assignedName = None).map {

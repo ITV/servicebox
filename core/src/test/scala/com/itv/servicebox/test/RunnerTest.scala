@@ -17,8 +17,9 @@ import cats.syntax.functor._
 import com.itv.servicebox.algebra.Service.ReadyCheck
 import com.itv.servicebox.algebra._
 import org.scalactic.TypeCheckedTripleEquals
-import org.scalatest.{Assertion, FreeSpec, Matchers, Succeeded}
-
+import org.scalatest.{TestData => _, _}
+import org.scalatest.freespec.AnyFreeSpec
+import org.scalatest.matchers.should.Matchers
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, TimeoutException}
 import scala.util.{Success, Try}
@@ -30,8 +31,9 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext,
                                 M: MonadError[F, Throwable],
                                 E: Effect[F],
                                 U: UnsafeBlocking[F])
-    extends FreeSpec
+    extends AnyFreeSpec
     with Matchers
+    with EitherValues
     with TypeCheckedTripleEquals {
 
   //TODO: cleanup appTag mess!
@@ -298,7 +300,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext,
             M.pure(Succeeded)
         }.attempt)
         .left
-        .get should ===(expected)
+        .value should ===(expected)
     }
 
     "raises an error if a service ready-check times out" in {
@@ -321,7 +323,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext,
         }
       )
 
-      result.left.get shouldBe a[TimeoutException]
+      result.left.value shouldBe a[TimeoutException]
       elapsedTime should be > 1.second
       counter.get should ===(10 +- 5)
     }

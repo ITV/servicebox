@@ -1,10 +1,11 @@
 package com.itv.servicebox.algebra
 
 import com.itv.servicebox.algebra.Dag.Edges
-import org.scalatest.{FreeSpec, Matchers}
 import cats.syntax.either._
+import org.scalatest.freespec.AnyFreeSpec
+import org.scalatest.matchers.should.Matchers
 
-class DagTest extends FreeSpec with Matchers {
+class DagTest extends AnyFreeSpec with Matchers {
   "Dag" - {
     "kahanSort" - {
       "sorts items in topological order" in {

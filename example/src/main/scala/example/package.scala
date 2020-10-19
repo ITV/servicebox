@@ -1,4 +1,4 @@
-import cats.effect.IO
+import cats.effect.{ContextShift, IO}
 import cats.syntax.apply._
 import cats.syntax.functor._
 import doobie._
@@ -18,12 +18,13 @@ package object example {
   case class Config(db: DbConfig, metricsDb: InfluxDBConfig)
 
   object pg {
-    private def transactor(config: DbConfig): Transactor[IO] = Transactor.fromDriverManager[IO](
-      "org.postgresql.Driver",
-      config.toJdbcUrl,
-      config.user,
-      config.password
-    )
+    private def transactor(config: DbConfig)(implicit cs: ContextShift[IO]): Transactor[IO] =
+      Transactor.fromDriverManager[IO](
+        "org.postgresql.Driver",
+        config.toJdbcUrl,
+        config.user,
+        config.password
+      )
 
     private def runMigrations(config: DbConfig) = IO {
       val flyway = new Flyway()
@@ -31,10 +32,10 @@ package object example {
       flyway.migrate()
     }
 
-    def withTransactor[A](config: DbConfig)(f: Transactor[IO] => IO[A]): IO[A] =
+    def withTransactor[A](config: DbConfig)(f: Transactor[IO] => IO[A])(implicit cs: ContextShift[IO]): IO[A] =
       runMigrations(config) *> f(transactor(config))
 
-    def pingDb(config: DbConfig): IO[Unit] = {
+    def pingDb(config: DbConfig)(implicit cs: ContextShift[IO]): IO[Unit] = {
       val tx = transactor(config)
       sql"select 1".query[Int].unique.transact(tx).void
     }

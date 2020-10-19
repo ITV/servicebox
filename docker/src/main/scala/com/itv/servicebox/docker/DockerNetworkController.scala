@@ -12,8 +12,7 @@ import com.spotify.docker.client.DockerClient.ListNetworksParam
 import com.spotify.docker.client.exceptions.NetworkNotFoundException
 import com.spotify.docker.client.messages.NetworkConfig
 
-import scala.collection.JavaConverters._
-import scala.util.{Success, Try}
+import scala.jdk.CollectionConverters._
 
 class DockerNetworkController[F[_]](dockerClient: DefaultDockerClient, logger: Logger[F])(implicit E: Effect[F],
                                                                                           M: FlatMap[F],
@@ -47,7 +46,7 @@ class DockerNetworkController[F[_]](dockerClient: DefaultDockerClient, logger: L
         .map(_.name())
         .toList)
 
-  override def removeNetwork(): F[Unit] =
+  override def removeNetwork: F[Unit] =
     for {
       networkExists <- networks.map(_.exists(_ == _networkName))
       _ <- if (networkExists)
@@ -55,11 +54,13 @@ class DockerNetworkController[F[_]](dockerClient: DefaultDockerClient, logger: L
       else E.delay(logger.debug(s"cannot remove network ${_networkName}. It doesn't exist!"))
     } yield ()
 
-  private def removeNetwork(networkName: String) = E.delay(
-    dockerClient.removeNetwork(config.name())
-  ).recoverWith {
-    case _:NetworkNotFoundException => E.unit
-  }
+  private def removeNetwork(networkName: String) =
+    E.delay(
+        dockerClient.removeNetwork(config.name())
+      )
+      .recoverWith {
+        case _: NetworkNotFoundException => E.unit
+      }
 
   override def networkName: Option[NetworkName] = Some(config.name())
 }
