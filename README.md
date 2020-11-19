@@ -2,6 +2,8 @@
 
 A library to define and run test dependencies using scala and Docker containers.
 
+_WARNING:_ This library in unmaintained!
+
 ## Containers and integration testing
 
 Scala's powerful type system can help avoiding a range of otherwise common bugs, 
