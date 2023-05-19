@@ -2,7 +2,7 @@ import sbt.Keys.publishArtifact
 import ReleaseTransformations._
 
 val monocleVersion  = "2.1.0"
-val doobieVersion   = "0.9.2"
+val doobieVersion   = "1.0.0-RC2"
 val influxDbVersion = "2.9"
 
 val readme     = "README.md"
@@ -26,15 +26,15 @@ val baseSettings = Seq(
     "-Xfatal-warnings",
   ),
   libraryDependencies ++= Seq(
-    "org.typelevel"              %% "cats-core"      % "2.2.0",
-    "org.typelevel"              %% "cats-effect"    % "2.2.0",
-    "org.typelevel"              %% "kittens"        % "2.1.0",
-    "org.scalatest"              %% "scalatest"      % "3.2.2" % "test",
+    "org.typelevel"              %% "cats-core"      % "2.9.0",
+    "org.typelevel"              %% "cats-effect"    % "3.5.0",
+    "org.typelevel"              %% "kittens"        % "3.0.0",
+    "org.scalatest"              %% "scalatest"      % "3.2.15" % "test",
     "com.github.julien-truffaut" %% "monocle-core"   % monocleVersion,
     "com.github.julien-truffaut" %% "monocle-macro"  % monocleVersion,
-    "ch.qos.logback"             % "logback-classic" % "1.2.3",
-    "com.typesafe.scala-logging" %% "scala-logging"  % "3.9.2",
-    compilerPlugin("org.typelevel" %% "kind-projector" % "0.11.0" cross CrossVersion.full)
+    "ch.qos.logback"             % "logback-classic" % "1.4.6",
+    "com.typesafe.scala-logging" %% "scala-logging"  % "3.9.5",
+    compilerPlugin("org.typelevel" %% "kind-projector" % "0.13.2" cross CrossVersion.full)
   )
 )
 
@@ -105,7 +105,7 @@ lazy val example = withDeps(
     .settings(baseSettings ++ Seq(
       libraryDependencies ++= Seq(
         "org.flywaydb" % "flyway-core"      % "4.2.0",
-        "org.postgresql" % "postgresql" % "42.2.17",
+        "org.postgresql" % "postgresql" % "42.5.4",
         "org.tpolecat" %% "doobie-core"     % doobieVersion,
         "org.tpolecat" %% "doobie-postgres" % doobieVersion,
         "org.influxdb" % "influxdb-java"    % influxDbVersion

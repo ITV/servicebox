@@ -1,7 +1,6 @@
 package com.itv.servicebox.docker
 
-import cats.MonadError
-import cats.effect.Effect
+import cats.effect.kernel.Sync
 import cats.instances.list._
 import cats.syntax.flatMap._
 import cats.syntax.foldable._
@@ -26,7 +25,7 @@ import cats.syntax.applicativeError._
 class DockerContainerController[F[_]](
     dockerClient: DefaultDockerClient,
     logger: Logger[F],
-    network: Option[NetworkName])(implicit E: Effect[F], M: MonadError[F, Throwable], tag: AppTag)
+    network: Option[NetworkName])(implicit S: Sync[F], tag: AppTag)
     extends algebra.ContainerController[F](new DockerImageRegistry[F](dockerClient, logger), logger, network) {
 
   override def containerGroups(service: Service.Registered[F]) =
@@ -37,7 +36,7 @@ class DockerContainerController[F[_]](
           runningContainersByImageName
             .getOrElse(c.imageName, Nil)
             .traverse { javaContainer =>
-              E.delay(dockerClient.inspectContainer(javaContainer.id())).map { info =>
+              S.blocking(dockerClient.inspectContainer(javaContainer.id())).map { info =>
                 ContainerMatcher(ContainerWithDetails(javaContainer, info), c)
               }
             }
@@ -56,17 +55,17 @@ class DockerContainerController[F[_]](
     }
 
   def runningContainersByImageName(spec: Service.Spec[F]): F[Map[String, List[JavaContainer]]] =
-    E.delay(dockerClient.listContainers(queryParams(spec.ref, None): _*))
+    S.blocking(dockerClient.listContainers(queryParams(spec.ref, None): _*))
       .map(_.asScala.toList.groupBy(_.image()))
 
   override protected def startContainer(serviceRef: Service.Ref, container: Container.Registered): F[Unit] = {
     val config = containerConfig(serviceRef, container)
 
     for {
-      res <- E.delay(
+      res <- S.blocking(
         container.name
           .fold(dockerClient.createContainer(config))(name => dockerClient.createContainer(config, name)))
-      _ <- E.delay(dockerClient.startContainer(res.id()))
+      _ <- S.blocking(dockerClient.startContainer(res.id()))
 
     } yield ()
   }
@@ -78,19 +77,19 @@ class DockerContainerController[F[_]](
     forceRm(ListContainersParam.withLabel(AppTagLabel, tag.show), ListContainersParam.allContainers())
   private def forceRm(params: ListContainersParam*): F[Unit] =
     for {
-      containers <- E
-        .delay(dockerClient.listContainers(params: _*))
+      containers <- S
+        .blocking(dockerClient.listContainers(params: _*))
         .map(_.asScala.toList)
       _ <- logger.warn(s"removing containers: ${containers.map(_.id())}")
       _ <- containers.traverse(c => removeContainer(c.id()))
     } yield ()
 
   private def removeContainer(containerId: String): F[Unit] =
-    E.delay(
+    S.blocking(
         dockerClient.removeContainer(containerId, RemoveContainerParam.forceKill())
       )
       .recoverWith {
-        case e: DockerRequestException if e.status() == 409 => E.unit
+        case e: DockerRequestException if e.status() == 409 => S.unit
       }
 
   private def queryParams(serviceRef: Service.Ref, containerRef: Option[Container.Ref]): Seq[ListContainersParam] =

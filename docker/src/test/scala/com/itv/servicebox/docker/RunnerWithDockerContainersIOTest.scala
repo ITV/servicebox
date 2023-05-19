@@ -1,6 +1,7 @@
 package com.itv.servicebox.docker
 
 import cats.effect.IO
+import cats.effect.kernel.Clock
 import com.itv.servicebox.algebra._
 import com.itv.servicebox.interpreter.{IOLogger, ioScheduler}
 import com.itv.servicebox.test.{Dependencies, RunnerTest, TestData, TestEnv}
@@ -27,7 +28,7 @@ class RunnerWithDockerContainersIOTest extends RunnerTest[IO] with BeforeAndAfte
   }
 
   override def dependencies(implicit tag: AppTag): Dependencies[IO] =
-    new Dependencies(IOLogger, imageRegistry, networkCtrl, containerCtrl, ioScheduler(IOLogger))
+    new Dependencies(IOLogger, imageRegistry, networkCtrl, containerCtrl, ioScheduler(IOLogger, implicitly[Clock[IO]]))
 
   override def withServices(testData: TestData[IO])(f: TestEnv[IO] => IO[Assertion])(implicit tag: AppTag) =
     containerCtrl.removeContainers *> networkCtrl.removeNetwork *> super.withServices(testData)(f)

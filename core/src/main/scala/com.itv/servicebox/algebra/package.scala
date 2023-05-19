@@ -3,9 +3,9 @@ package com.itv.servicebox
 import java.nio.file.{Files, Path}
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicReference
-
 import cats.data.{NonEmptyList, StateT}
-import cats.effect.{Effect, IO}
+import cats.derived.semiauto
+import cats.effect.{IO, Sync}
 import cats.instances.all._
 import cats.syntax.all._
 import cats.{ApplicativeError, Eq, Monad, Show}
@@ -39,21 +39,21 @@ package object algebra {
     }
 
     def fromTmpFileContent[F[_]](baseDir: Path)(to: Path, ro: Boolean = false)(
-        files: (String, Array[Byte])*)(implicit E: Effect[F], M: Monad[F]): F[BindMount] = {
+        files: (String, Array[Byte])*)(implicit S: Sync[F], M: Monad[F]): F[BindMount] = {
 
       val mountDir = baseDir.resolve(UUID.randomUUID().toString)
 
       for {
 
-        _ <- E
+        _ <- S
           .delay(baseDir.toFile.exists())
-          .ifM(E.unit, E.delay(baseDir.toFile.mkdirs()).void)
+          .ifM(S.unit, S.delay(baseDir.toFile.mkdirs()).void)
 
-        _ <- E.delay(Files.createDirectory(mountDir))
+        _ <- S.delay(Files.createDirectory(mountDir))
 
         _ <- files.toList.traverse_ {
           case (fileName, content) =>
-            E.delay(Files.write(mountDir.resolve(fileName), content))
+            S.delay(Files.write(mountDir.resolve(fileName), content))
         }
       } yield BindMount(mountDir, to, ro)
     }
@@ -135,7 +135,8 @@ package object algebra {
     }
 
     object Spec {
-      implicit val eq: Eq[Spec] = cats.derived.semi.eq[Spec]
+
+      implicit val eqSpec: Eq[Spec] = semiauto.eq[Spec]
     }
 
     case class Registered(ref: Container.Ref,
@@ -435,6 +436,7 @@ package object algebra {
   }
 
   object UnsafeBlocking {
+    import cats.effect.unsafe.implicits._
     implicit val ioRunSync: UnsafeBlocking[IO] = new UnsafeBlocking[IO] {
       override def runSync[A](io: IO[A]): A = io.unsafeRunSync()
     }

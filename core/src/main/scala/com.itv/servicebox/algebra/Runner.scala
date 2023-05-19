@@ -2,18 +2,17 @@ package com.itv.servicebox.algebra
 
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
-
 import cats.MonadError
 import cats.syntax.all._
 import cats.instances.all._
 import Service._
-import cats.effect.Effect
+import cats.effect.Sync
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.FiniteDuration
 
 class Runner[F[_]](srvCtrl: ServiceController[F], networkCtrl: NetworkController[F], registry: ServiceRegistry[F])(
-    serviceSeq: Spec[F]*)(implicit M: MonadError[F, Throwable], E: Effect[F], tag: AppTag) {
+    serviceSeq: Spec[F]*)(implicit S: Sync[F], M: MonadError[F, Throwable], tag: AppTag) {
 
   private val services           = serviceSeq.toList
   private val tearedDownServices = new AtomicReference[Set[Service.Ref]](Set.empty[Service.Ref])
@@ -50,7 +49,7 @@ class Runner[F[_]](srvCtrl: ServiceController[F], networkCtrl: NetworkController
 
     for {
       sortedRefs <- Dag(incomingEdges).topologicalSort.map(_.reverse)
-      sortedSpecs <- sortedRefs.traverse[Either[Throwable, ?], Service.Spec[F]](ref =>
+      sortedSpecs <- sortedRefs.traverse[Either[Throwable, *], Service.Spec[F]](ref =>
         servicesByRef.get(ref).toRight(refNotFound(ref)))
 
     } yield sortedSpecs
@@ -68,11 +67,11 @@ class Runner[F[_]](srvCtrl: ServiceController[F], networkCtrl: NetworkController
 
   private def setupWithRuntimeInfo(spec: Spec[F])(implicit ec: ExecutionContext): F[(Registered[F], RuntimeInfo)] =
     for {
-      t1         <- E.delay(System.currentTimeMillis())
+      t1         <- S.delay(System.currentTimeMillis())
       registered <- srvCtrl.start(spec)
-      t2         <- E.delay(System.currentTimeMillis())
+      t2         <- S.delay(System.currentTimeMillis())
       _          <- srvCtrl.waitUntilReady(registered)
-      t3         <- E.delay(System.currentTimeMillis())
+      t3         <- S.delay(System.currentTimeMillis())
     } yield {
       val setupTime      = FiniteDuration(t2 - t1, TimeUnit.MILLISECONDS)
       val readyCheckTime = FiniteDuration(t3 - t2, TimeUnit.MILLISECONDS)
@@ -81,15 +80,15 @@ class Runner[F[_]](srvCtrl: ServiceController[F], networkCtrl: NetworkController
 
   private def tearDownOnce(spec: Spec[F]): F[Unit] =
     for {
-      alreadyDone     <- E.delay(tearedDownServices.get())
+      alreadyDone     <- S.delay(tearedDownServices.get())
       maybeRegistered <- registry.lookup(spec)
       _ <- maybeRegistered.filterNot(srv => alreadyDone(srv.ref)).fold(M.unit) { srv =>
-        srvCtrl.tearDown(srv) *> E.delay(tearedDownServices.getAndUpdate(_ + srv.ref))
+        srvCtrl.tearDown(srv) *> S.delay(tearedDownServices.getAndUpdate(_ + srv.ref))
       }
-      _ <- E
+      _ <- S
         .delay(tearedDownServices.get)
         .map(_ == services.map(_.ref).toSet)
-        .ifM(E.delay(Thread.sleep(2000)) *> networkCtrl.removeNetwork, E.unit)
+        .ifM(S.delay(Thread.sleep(2000)) *> networkCtrl.removeNetwork, S.unit)
 
     } yield ()
 }

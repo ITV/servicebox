@@ -2,14 +2,11 @@ package com.itv.servicebox.algebra
 
 import java.nio.file.{Files, Paths}
 import java.util.UUID
-
 import cats.effect.IO
-import cats.instances.future._
+import cats.effect.unsafe.implicits.global
 import org.scalatest.freespec.AnyFreeSpec
 import org.scalatest.matchers.should.Matchers
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.duration._
-import scala.concurrent.{Await, Future}
+
 
 class packageTest extends AnyFreeSpec with Matchers {
   "BindMount" - {

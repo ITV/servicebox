@@ -1,10 +1,9 @@
 package com.itv.servicebox.fake
 
 import java.util.concurrent.atomic.AtomicReference
-
 import cats.MonadError
 import cats.data.NonEmptyList
-import cats.effect.Effect
+import cats.effect.Sync
 import cats.instances.list._
 import cats.syntax.flatMap._
 import cats.syntax.functor._
@@ -21,7 +20,7 @@ class ContainerController[F[_]](
     imageRegistry: ImageRegistry[F],
     logger: Logger[F],
     network: Option[NetworkName],
-    initialState: ContainerStates = Map.empty)(implicit tag: AppTag, E: Effect[F], M: MonadError[F, Throwable])
+    initialState: ContainerStates = Map.empty)(implicit tag: AppTag, S: Sync[F])
     extends algebra.ContainerController[F](imageRegistry, logger, network) {
 
   private val containersByRef = new AtomicReference[ContainerStates](initialState)
@@ -34,7 +33,7 @@ class ContainerController[F[_]](
       containers <- spec.containers.toList
         .traverse[F, Option[ContainerWithState]] { c =>
           val ref = c.ref(spec.ref)
-          E.delay(containersByRef.get)
+          S.delay(containersByRef.get)
             .map(_.get(ref).filter(containerWithState => containerWithState.container.toSpec === c.toSpec))
         }
         .map(_.flatten)
@@ -52,7 +51,7 @@ class ContainerController[F[_]](
         s"starting container ${container.ref.show} service ref: ${serviceRef.show} with port mappings: ${container.portMappings
           .map { case (host, guest) => s"$host -> $guest" }
           .mkString(", ")}")
-      _ <- E.delay(
+      _ <- S.delay(
         containersByRef.getAndUpdate(_.updated(container.ref, ContainerWithState(container, isRunning = true))))
     } yield ()
 
@@ -64,7 +63,7 @@ class ContainerController[F[_]](
 
   private def shutdownContainer(ref: Container.Ref): F[Unit] =
     for {
-      _ <- E.delay(containersByRef.getAndUpdate { containers =>
+      _ <- S.delay(containersByRef.getAndUpdate { containers =>
         containers
           .get(ref)
           .map { c =>
