@@ -4,10 +4,10 @@ import java.net.{ServerSocket, Socket}
 import java.nio.file.Paths
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
-
 import cats.MonadError
 import cats.data.NonEmptyList
-import cats.effect.Effect
+import cats.effect.Ref
+import cats.effect.kernel.Sync
 import cats.instances.int._
 import cats.syntax.applicativeError._
 import cats.syntax.either._
@@ -20,6 +20,7 @@ import org.scalactic.TypeCheckedTripleEquals
 import org.scalatest.{TestData => _, _}
 import org.scalatest.freespec.AnyFreeSpec
 import org.scalatest.matchers.should.Matchers
+
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, TimeoutException}
 import scala.util.{Success, Try}
@@ -29,7 +30,7 @@ object Fail extends org.scalatest.Tag("fail")
 
 abstract class RunnerTest[F[_]](implicit ec: ExecutionContext,
                                 M: MonadError[F, Throwable],
-                                E: Effect[F],
+                                S: Sync[F],
                                 U: UnsafeBlocking[F])
     extends AnyFreeSpec
     with Matchers
@@ -77,9 +78,9 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext,
 
   def timed[A](f: F[A]): F[(A, FiniteDuration)] =
     for {
-      t1 <- E.delay(System.currentTimeMillis())
+      t1 <- S.delay(System.currentTimeMillis())
       a  <- f
-      t2 <- E.delay(System.currentTimeMillis())
+      t2 <- S.delay(System.currentTimeMillis())
     } yield (a, FiniteDuration(t2 - t1, TimeUnit.MILLISECONDS))
 
   object Specs {
@@ -203,7 +204,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext,
 
     "matches running containers" in {
       U.runSync(withRunningContainers(identity)(Specs.rmq) { (env, runningContainers) =>
-        E.delay {
+        S.delay {
           runningContainers should have size 1
           runningContainers should ===(env.preExisting.map(_.container))
         }
@@ -310,7 +311,7 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext,
         Specs.rmq
           .copy(
             readyCheck = ReadyCheck(_ =>
-                                      E.delay(counter.getAndIncrement()) >> M.raiseError[Unit](
+                                      S.delay(counter.getAndIncrement()) >> M.raiseError[Unit](
                                         new IllegalStateException(s"Cannot access test service")),
                                     100.millis,
                                     1.second))
@@ -329,26 +330,29 @@ abstract class RunnerTest[F[_]](implicit ec: ExecutionContext,
     }
 
     "recovers from errors when ready-checks eventually succeed" in {
-      val counter = new AtomicInteger(0)
-      val rabbitSpec = Specs.rmq
-        .copy(readyCheck = ReadyCheck(_ => {
-          if (counter.getAndIncrement() < 3)
-            M.raiseError[Unit](new IllegalStateException(s"Cannot access test service"))
-          else
-            M.pure(())
+      def rabbitSpec(counter: Ref[F, Int]) = Specs.rmq
+        .copy(readyCheck = ReadyCheck[F](_ => {
+          M.ifM(counter.updateAndGet(_ + 1).map(_ < 3))(
+            M.raiseError[Unit](new IllegalStateException("Cannot access test service")),
+            S.delay(println("Counter is above 3 Success"))
+          )
         }, 100.millis, 1.second))
 
       U.runSync(
-        withServices(TestData(rabbitSpec)) { env =>
-          for {
-            service           <- env.serviceRegistry.unsafeLookup(rabbitSpec)
-            runningContainers <- env.deps.containerController.matchedContainers(service)
-            readyCheckDuration = env.runtimeInfo(service.ref).readyCheckDuration
-          } yield {
-            service.toSpec should ===(rabbitSpec)
-            runningContainers should have size 1
-            counter.get() should ===(4)
-            readyCheckDuration.toMillis should ===(300L +- 150L)
+        Ref.of[F, Int](0).flatMap { counter =>
+          val spec = rabbitSpec(counter)
+          withServices(TestData(spec)) { env =>
+            for {
+              service           <- env.serviceRegistry.unsafeLookup(spec)
+              runningContainers <- env.deps.containerController.matchedContainers(service)
+              readyCheckDuration = env.runtimeInfo(service.ref).readyCheckDuration
+              c        <- counter.get
+            } yield {
+              service.toSpec should ===(spec)
+              runningContainers should have size 1
+              c should ===(3)
+              readyCheckDuration.toMillis should ===(300L +- 150L)
+            }
           }
         }
       )

@@ -2,24 +2,20 @@ package com.itv.servicebox.algebra
 
 import java.net.Socket
 import java.util.concurrent.atomic.AtomicReference
-
 import cats.{Applicative, MonadError}
 import cats.data.{NonEmptyList, StateT}
-import cats.effect.Effect
+import cats.effect.kernel.Sync
 import cats.instances.list._
 import cats.instances.map._
 import cats.instances.set._
-import cats.instances.stream._
 import cats.syntax.all._
-
-import scala.util.Try
 
 object InMemoryServiceRegistry {
   val DefaultPortRange = 49162 to 49262
 }
 
 class InMemoryServiceRegistry[F[_]](range: Range, logger: Logger[F])(implicit tag: AppTag,
-                                                                     E: Effect[F],
+                                                                     S: Sync[F],
                                                                      M: MonadError[F, Throwable])
     extends ServiceRegistry[F](logger) {
 
@@ -31,7 +27,7 @@ class InMemoryServiceRegistry[F[_]](range: Range, logger: Logger[F])(implicit ta
 
   private def updateRange(n: Int)(implicit A: Applicative[F]): PortAllocation[F, Unit] =
     StateT.modifyF[F, AtomicReference[Range]] { ref =>
-      E.delay(ref.getAndUpdate(_.drop(n))) *> A.pure(ref)
+      S.delay(ref.getAndUpdate(_.drop(n))) *> A.pure(ref)
     }
 
   private def lift[F[_]: Applicative, A](fa: F[A]): PortAllocation[F, A] =
@@ -65,7 +61,7 @@ class InMemoryServiceRegistry[F[_]](range: Range, logger: Logger[F])(implicit ta
     } yield registered
 
   private def checkPortNotBound(port: Int): F[Boolean] =
-    E.delay {
+    S.delay {
         new Socket("localhost", port).close()
       }
       .attempt
@@ -74,7 +70,7 @@ class InMemoryServiceRegistry[F[_]](range: Range, logger: Logger[F])(implicit ta
   override def register(service: Service.Spec[F]) =
     for {
       registeredContainers <- service.containers.toList
-        .traverse[PortAllocation[F, ?], Container.Registered](c => allocate(c, service.ref))
+        .traverse[PortAllocation[F, *], Container.Registered](c => allocate(c, service.ref))
         .runA(portRange)
 
       err = ServiceRegistry.EmptyPortList(registeredContainers.map(_.ref))
@@ -99,15 +95,15 @@ class InMemoryServiceRegistry[F[_]](range: Range, logger: Logger[F])(implicit ta
       portMappings = rs.containers.foldMap(c => Map(c.ref -> c.portMappings))
 
       _ <- logger.debug(s"registering containers with port ranges:\n\t$summary")
-      _ <- E.delay(registry.getAndUpdate(_.updated(rs.ref, portMappings)))
+      _ <- S.delay(registry.getAndUpdate(_.updated(rs.ref, portMappings)))
 
     } yield rs
 
   override def deregister(id: Service.Ref) =
-    E.delay(registry.getAndUpdate(_ - id)).void
+    S.delay(registry.getAndUpdate(_ - id)).void
 
   override def deregister(id: Service.Ref, cRef: Container.Ref) =
-    E.delay(registry.getAndUpdate { m =>
+    S.delay(registry.getAndUpdate { m =>
         m.get(id)
           .map { mappings =>
             m.updated(id, mappings - cRef)
@@ -117,10 +113,10 @@ class InMemoryServiceRegistry[F[_]](range: Range, logger: Logger[F])(implicit ta
       .void
 
   override def lookup(id: Service.Ref) =
-    E.delay(registry.get).map(_.get(id).filter(_.nonEmpty))
+    S.delay(registry.get).map(_.get(id).filter(_.nonEmpty))
 
   override def updatePortMappings(id: Service.Ref, cId: Container.Ref, mappings: Set[PortMapping]) =
-    E.delay(registry.getAndUpdate { data =>
+    S.delay(registry.getAndUpdate { data =>
         val updated = data
           .get(id)
           .map { m =>
