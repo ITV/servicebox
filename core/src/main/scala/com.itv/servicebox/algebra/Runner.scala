@@ -58,10 +58,10 @@ class Runner[F[_]](srvCtrl: ServiceController[F], networkCtrl: NetworkController
   private def setUp(spec: Spec[F], registered: ServicesByRef[F])(implicit ec: ExecutionContext): F[Registered[F]] =
     for {
 
-      depenendanciesEnv <- spec.dependencies.toList
+      dependenciesEnv <- spec.dependencies.toList
         .foldMapM[F, Map[String, String]](ref => registered.envFor(ref))
 
-      registered <- srvCtrl.start(spec.mergeToContainersEnv(depenendanciesEnv))
+      registered <- srvCtrl.start(spec.mergeToContainersEnv(dependenciesEnv))
       _          <- srvCtrl.waitUntilReady(registered)
     } yield registered
 
